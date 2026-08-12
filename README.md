@@ -1,0 +1,180 @@
+# BSCPLC Circuit Expiry Notification System
+
+Secure upstream circuit expiry tracking and notification operations for BSCPLC.
+
+- **Stack:** Next.js 15 (App Router) on Vercel, Supabase (Postgres + Auth + RLS)
+- **Scheduled job:** daily `0 3 * * *` UTC via `vercel.json` cron → `GET /api/cron/expiry-notifications`
+- **Repository:** `D:\upstreamnotify` (not a Git repository — initialize before deployment)
+
+> **Hosting approval gate:** Vercel Hobby is suitable for technical
+> proof-of-concept use only. Confirm an approved organizational production plan
+> before go-live. Do not store production channel credentials until this plan
+> is approved.
+
+---
+
+## 1. Create the Supabase project and run the migration
+
+1. Create a Supabase project and note its **Project URL**, **anon/publishable key**
+   and **service role key** (Dashboard → Project Settings → API).
+2. Open the project's **SQL Editor** and run the files in order:
+   - `supabase/migrations/001_initial.sql`
+   - `supabase/seed.sql` (safe draft-only provider data + default notification rule)
+
+   Alternatively, apply both files with the bundled runner (requires
+   `DATABASE_URL` in `.env.local`, e.g. the IPv4 session pooler
+   `postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:5432/postgres`):
+
+   ```powershell
+   node --env-file=.env.local scripts/apply-sql.mjs supabase/migrations/001_initial.sql supabase/seed.sql
+   ```
+
+3. Verify with:
+
+   ```sql
+   select count(*) from public.circuits;          -- 0
+   select code from public.notification_rules;     -- global-default
+   select count(*) from public.notification_milestones; -- 2 (T-4M, T-30D)
+   ```
+
+## 2. Invite the first user and activate their profile
+
+1. Dashboard → Authentication → Users → **Invite user** with the operator's email.
+2. Have the operator sign in once at `/login` (the signup trigger creates their
+   profile with role `viewer` and `active = false`).
+3. As the database owner, promote them in the SQL Editor:
+
+   ```sql
+   update public.profiles
+   set role = 'admin', active = true
+   where email = 'operator@bscplc.example';
+   ```
+
+4. They can now sign in at `/login` and reach `/dashboard`. Other roles:
+   `operations_editor`, `provider_manager`, `auditor`, `viewer`.
+
+## 3. Import workbook data and complete current records
+
+1. Sign in as an administrator and open **Imports**.
+2. Upload the provider/circuit workbook (first worksheet; `.xlsx`/`.xls`, ≤ 5 MB).
+   See `docs/workbook-format.md` for the expected layout and
+   `docs/workbook-template.xlsx` for a fillable template.
+3. Review providers, circuit candidates and invoice references, resolve every
+   duplicate identifier (`skip` / `merge` / `create`) and commit.
+4. Open **Circuits** and complete the current picture for each record:
+   verified expiry dates, owners, start dates, monthly costs, and enable
+   notifications. Circuits without an expiry date cannot send notifications —
+   the import review warns about this explicitly.
+5. Register `provider_contacts` and `provider_notification_settings` rows for
+   each provider in the SQL Editor (recipient emails, WhatsApp numbers with
+   opt-in timestamps, Discord webhook ciphertext). The notification engine only
+   sends to resolved, opted-in recipients.
+
+## 4. Create the Vercel project and environment values
+
+1. Initialize Git and push the repository to your Git provider.
+2. In Vercel: **Add New Project** → import the repository (framework preset:
+   Next.js). The `vercel.json` cron is picked up automatically on Hobby and up.
+3. Add **separate** environment values for Preview and Production from
+   `.env.example` — see the table below. Production values must be real
+   approved credentials; Preview may use safe test values.
+
+| Variable | Public? | Purpose |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SUPABASE_URL` | yes | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | yes | Publishable (anon) key |
+| `SUPABASE_SERVICE_ROLE_KEY` | no | Server-only: imports, audit, cron engine |
+| `CRON_SECRET` | no | Bearer secret for the scheduled job |
+| `APP_BASE_URL` | no | Canonical deployment URL |
+| `APP_ENCRYPTION_KEY` | no | 32-byte key (base64 or raw) for target encryption and preview signing |
+| `EMAIL_API_URL` / `EMAIL_API_KEY` | no | Transactional email provider endpoint/key |
+| `EMAIL_FROM` / `EMAIL_FROM_NAME` | no | Sender identity |
+| `WHATSAPP_API_VERSION` | no | Graph API version (default `v22.0`) |
+| `WHATSAPP_ACCESS_TOKEN` / `WHATSAPP_PHONE_NUMBER_ID` | no | WhatsApp Cloud API credentials |
+| `WHATSAPP_TEMPLATE_NAME` | no | Approved template used by the engine |
+| `DISCORD_WEBHOOK_URL` | no | Optional incoming webhook |
+
+Generate secrets locally, e.g.:
+
+```powershell
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"   # CRON_SECRET
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))" # APP_ENCRYPTION_KEY
+```
+
+> `APP_ENCRYPTION_KEY` must be exactly 32 bytes. If it is changed after
+> deliveries are stored, previously encrypted targets cannot be decrypted.
+
+## 5. Set the cron secret and verify the route
+
+1. Confirm `CRON_SECRET` is set in the deployment environment.
+2. From a machine that can reach the deployment:
+
+   ```powershell
+   # Without the secret -> 401
+   Invoke-WebRequest -Uri "https://<project>.vercel.app/api/cron/expiry-notifications" -SkipHttpErrorCheck | Select-Object StatusCode
+
+   # With the secret -> 200 { "ok": true, "businessDate": "…", "counts": {…} }
+   Invoke-WebRequest -Uri "https://<project>.vercel.app/api/cron/expiry-notifications" `
+     -Headers @{ Authorization = "Bearer $env:CRON_SECRET" } | Select-Object -ExpandProperty Content
+   ```
+
+3. The Vercel cron fires at `0 3 * * *` UTC (Dhaka business date). A manual run
+   via the authenticated request above is always safe — the engine is
+   idempotent per `(circuit_id, expiry_version, milestone_key)` and per
+   delivery `idempotency_key`.
+
+## 6. Configure channels after organizational approval
+
+- **Email:** point `EMAIL_API_URL`/`EMAIL_API_KEY` at the approved provider and
+  sender. The adapter posts JSON with `from`, `to`, `cc`, `bcc`, `replyTo`,
+  `subject`, `html` and `text`.
+- **WhatsApp:** submit the template (variables: circuit ID, expiry date,
+  milestone label) in Meta Business Manager, confirm its status is
+  **Approved**, and record opt-in consent timestamps in
+  `provider_contacts.whatsapp_opt_in_at`. The engine only sends to opted-in
+  E.164 numbers.
+- **Discord:** create an incoming webhook and store its URL in
+  `DISCORD_WEBHOOK_URL` or per-provider ciphertext. Mentions are always
+  allow-listed; `@everyone`/`@here` are stripped.
+- Approval is required **before** storing production channel credentials.
+
+## 7. Brand assets and tokens
+
+- Replace the placeholder brand mark in `components/brand-logo.tsx` with the
+  official BSCPLC logo asset.
+- Update approved brand tokens in `app/globals.css` (`:root` color variables:
+  `--blue-*`, `--green-*`, `--red-*`, `--gold-*`, `--ink`, `--muted`, `--line`).
+
+## 8. Go-live checks
+
+1. **Channel tests:** as an administrator, open **Settings → Channel test** and
+   send to a target you control (WhatsApp requires opt-in metadata).
+2. **Workflow:** create a circuit as `draft`, then edit it to `active` with a
+   verified expiry date and owner; confirm the first-reminder date is shown and
+   the record appears in the Dashboard KPIs.
+3. **History:** inspect **Notifications** (events + masked deliveries) and the
+   read-only **Audit log** after a cron run.
+4. **Approval:** sign off the hosting plan (see the warning above) and record
+   the approved review in the deployment notes.
+
+---
+
+## Development
+
+```powershell
+npm install
+npm run dev        # http://localhost:3000
+npm run typecheck
+npm run lint
+npm test -- --run
+npm run build
+```
+
+## Security notes
+
+- Server-only values are never rendered client-side; forms display
+  configured/not-configured status only.
+- Notification targets are stored as a SHA-256 hash plus AES-256-GCM
+  ciphertext; the UI shows masked targets only.
+- API errors never echo secrets; audit values are redacted before storage.
+- The cron route returns counts only — never recipient payloads or secrets.

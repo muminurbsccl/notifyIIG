@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+coverage/
+.vercel/
+.worktrees/
+.superpowers/
+.env
+.env.*
+!.env.example
+*.log
+tsconfig.tsbuildinfo
