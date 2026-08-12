@@ -10,3 +10,5 @@ coverage/
 !.env.example
 *.log
 tsconfig.tsbuildinfo
+channel-config*.json
+!channel-config.example.json

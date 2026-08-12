@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint .",
     "test": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "channels:configure": "node scripts/configure-channels.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",

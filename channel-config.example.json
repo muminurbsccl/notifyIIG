@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "projectRef": "replacewithprojectref",
+  "actorEmail": "operator@example.com",
+  "providers": [
+    {
+      "code": "NTT",
+      "contacts": [
+        {
+          "key": "noc-primary",
+          "id": null,
+          "contactType": "recipient",
+          "name": "Example NOC",
+          "roleTitle": "Network Operations",
+          "email": "noc@example.com",
+          "phoneE164": "+12025550123",
+          "whatsappOptIn": null,
+          "active": true
+        }
+      ],
+      "channels": {
+        "email": { "enabled": false, "to": [], "cc": [], "bcc": [], "replyTo": null, "subjectPrefix": null, "templateOverride": null },
+        "whatsapp": { "enabled": false, "recipients": [], "templateName": null },
+        "discord": { "enabled": false, "target": null, "mentionIds": [] }
+      }
+    }
+  ]
+}

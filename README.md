@@ -125,6 +125,10 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))" # AP
 
 ## 6. Configure channels after organizational approval
 
+Use `docs/channel-setup.md` for the dry-run-first provider contact and routing
+operator. Start with `npm run channels:configure -- channel-config.local.json`;
+database writes additionally require `--apply` and typed project confirmation.
+
 - **Email:** point `EMAIL_API_URL`/`EMAIL_API_KEY` at the approved provider and
   sender. The adapter posts JSON with `from`, `to`, `cc`, `bcc`, `replyTo`,
   `subject`, `html` and `text`.

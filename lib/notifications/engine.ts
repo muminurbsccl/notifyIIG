@@ -152,14 +152,15 @@ async function resolveRecipients(
   }
 
   if (settings.discord_enabled === true) {
-    let webhook = config.discordWebhookUrl;
-    if (!webhook && typeof settings.discord_webhook_ciphertext === "string" && config.appEncryptionKey) {
+    let webhook: string | null = null;
+    if (typeof settings.discord_webhook_ciphertext === "string" && config.appEncryptionKey) {
       try {
         webhook = decryptTarget(settings.discord_webhook_ciphertext, config.appEncryptionKey);
       } catch {
         webhook = null;
       }
     }
+    webhook ??= config.discordWebhookUrl;
     if (webhook) {
       const mentionIds = Array.isArray(settings.discord_mention_ids)
         ? (settings.discord_mention_ids as unknown[])
