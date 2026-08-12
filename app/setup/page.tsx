@@ -9,7 +9,7 @@ export default function SetupPage() {
         <h1 id="setup-title">Connect the application services</h1>
         <p className="muted">
           This deployment is missing the public Supabase URL or anonymous key.
-          Add the values from <code>.env.example</code> to the local environment
+          Add the values from <code>env.example</code> to the local environment
           or Vercel project settings, then restart the application.
         </p>
         <ol className="setup-list">

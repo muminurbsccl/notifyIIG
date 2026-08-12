@@ -76,7 +76,7 @@ Secure upstream circuit expiry tracking and notification operations for BSCPLC.
 2. In Vercel: **Add New Project** → import the repository (framework preset:
    Next.js). The `vercel.json` cron is picked up automatically on Hobby and up.
 3. Add **separate** environment values for Preview and Production from
-   `.env.example` — see the table below. Production values must be real
+   `env.example` — see the table below. Production values must be real
    approved credentials; Preview may use safe test values.
 
 | Variable | Public? | Purpose |

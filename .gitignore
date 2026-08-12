@@ -7,7 +7,6 @@ coverage/
 .superpowers/
 .env
 .env.*
-!.env.example
 *.log
 tsconfig.tsbuildinfo
 channel-config*.json
