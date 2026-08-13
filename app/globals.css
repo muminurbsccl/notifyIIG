@@ -98,20 +98,16 @@ textarea:focus-visible {
   gap: 12px;
 }
 
-.brand-mark {
-  display: grid;
-  width: 42px;
-  height: 42px;
-  place-items: center;
-  border: 2px solid currentColor;
-  border-radius: 11px;
-  color: var(--blue-700);
-  font-size: 1.35rem;
-  font-weight: 800;
+.brand-logo-image {
+  display: block;
+  width: auto;
+  height: 44px;
+  object-fit: contain;
 }
 
-.sidebar .brand-mark {
-  color: #fff;
+.sidebar .brand-logo-image,
+.brand-lockup-compact .brand-logo-image {
+  height: 32px;
 }
 
 .brand-copy {
