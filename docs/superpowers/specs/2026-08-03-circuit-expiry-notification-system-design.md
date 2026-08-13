@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-03
 **Status:** Approved for autonomous MVP implementation
-**Source:** `PRD.docx` (31 July 2026)
+**Source:** approved BSCPLC PRD dated 31 July 2026 (not stored in this repository)
 **Deployment target:** Vercel Hobby/free-tier-compatible proof of concept with a managed external database
 
 ## 1. Purpose and scope
