@@ -51,7 +51,7 @@ afterEach(() => {
 describe("email adapter", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.fetch.mockResolvedValue(jsonResponse({ messageId: "email-1" }));
+    mocks.fetch.mockResolvedValue(jsonResponse({ success: true, id: "email-1" }));
   });
 
   it("sends an HTML and plain-text payload with the API key", async () => {
@@ -71,13 +71,13 @@ describe("email adapter", () => {
       "https://email.example.test/v1/send",
       expect.objectContaining({
         method: "POST",
-        headers: expect.objectContaining({ authorization: "Bearer email-key-test" }),
+        headers: expect.objectContaining({ "x-auth-token": "email-key-test" }),
         body: expect.stringContaining('"subject":"Circuit USID-1 expires 2026-12-31"'),
       }),
     );
     const body = JSON.parse(mocks.fetch.mock.calls[0][1].body);
     expect(body.from).toEqual({ name: "BSCPLC", email: "notify@bscplc.test" });
-    expect(body.to).toEqual([{ email: "ops@bscplc.test" }]);
+    expect(body.to).toEqual(["ops@bscplc.test"]);
     expect(body.cc).toEqual([]);
     expect(body.bcc).toEqual([]);
     expect(body.replyTo).toBe("circuits@bscplc.test");

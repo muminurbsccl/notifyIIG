@@ -24,13 +24,13 @@ export async function sendEmail(input: EmailSendInput): Promise<ChannelResult> {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${config.emailApiKey}`,
+        "x-auth-token": config.emailApiKey,
       },
       body: JSON.stringify({
         from: { name: config.emailFromName ?? "BSCPLC", email: config.emailFrom },
-        to: input.to.map((email) => ({ email })),
-        cc: (input.cc ?? []).map((email) => ({ email })),
-        bcc: (input.bcc ?? []).map((email) => ({ email })),
+        to: input.to,
+        cc: input.cc ?? [],
+        bcc: input.bcc ?? [],
         replyTo: input.replyTo ?? null,
         subject: input.subject,
         html: input.bodyHtml,
@@ -44,8 +44,12 @@ export async function sendEmail(input: EmailSendInput): Promise<ChannelResult> {
     }
     let externalId: string | null = null;
     try {
-      const body = (await response.json()) as { messageId?: string };
-      externalId = typeof body.messageId === "string" ? body.messageId : null;
+      const body = (await response.json()) as { id?: string; messageId?: string };
+      externalId = typeof body.id === "string"
+        ? body.id
+        : typeof body.messageId === "string"
+          ? body.messageId
+          : null;
     } catch {
       // Non-JSON success bodies carry no external id.
     }
