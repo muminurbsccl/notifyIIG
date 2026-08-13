@@ -3,6 +3,7 @@
 Secure upstream circuit expiry tracking and notification operations for BSCPLC.
 
 - **Stack:** Next.js 15 (App Router) on Vercel, Supabase (Postgres + Auth + RLS)
+- **Production URL:** `https://notifyiig.vercel.app`
 - **Scheduled job:** daily `0 3 * * *` UTC via `vercel.json` cron → `GET /api/cron/expiry-notifications`
 - **Repository:** `D:\upstreamnotify` (not a Git repository — initialize before deployment)
 
@@ -10,6 +11,12 @@ Secure upstream circuit expiry tracking and notification operations for BSCPLC.
 > proof-of-concept use only. Confirm an approved organizational production plan
 > before go-live. Do not store production channel credentials until this plan
 > is approved.
+
+The production deployment is linked to
+`https://github.com/muminurbsccl/notifyIIG` on branch `master`. Verified
+production checks: `/login` returns `200`, unauthenticated `/dashboard`
+redirects to `/login`, cron without the bearer secret returns `401`, and an
+authenticated zero-circuit cron run returns `200` with zero delivery counts.
 
 ---
 
