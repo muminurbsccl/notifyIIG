@@ -51,6 +51,16 @@ describe("workbook import merge", () => {
     expect(mergeAdapterResults([result([first, second])])).toEqual(mergeAdapterResults([result([second, first])]));
   });
 
+  it("is permutation-independent across results and candidates", () => {
+    const alpha = candidate({ notes: "Alpha" });
+    const beta = candidate({ monthlyCost: 500, currency: "USD", notes: "Beta", status: "draft", notificationEnabled: false, ownerOverride: null });
+    const gamma = candidate({ capacity: "10G", notes: "Gamma" });
+    const delta = candidate({ location: "SG1", notes: "Delta" });
+    const forward = mergeAdapterResults([result([alpha, beta]), result([gamma, delta])]);
+    const reversed = mergeAdapterResults([result([delta, gamma]), result([beta, alpha])]);
+    expect(forward).toEqual(reversed);
+  });
+
   it("keeps one normalized primary identifier and reports incompatible duplicate roles", () => {
     const preview = mergeAdapterResults([result([
       candidate({ identifiers: [
