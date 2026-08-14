@@ -27,6 +27,7 @@ describe("public login rendering contract", () => {
     expect(layout).toContain("twitter:");
     expect(layout).toContain("icons:");
     expect(page).toContain('canonical: "/login"');
+    expect(page).toContain("...PUBLIC_OPEN_GRAPH");
   });
 
   it("ships a valid public robots policy and PNG icon", () => {

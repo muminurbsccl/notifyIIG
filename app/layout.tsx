@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { PUBLIC_DESCRIPTION, PUBLIC_OPEN_GRAPH } from "@/lib/public-metadata";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -9,23 +10,16 @@ export const metadata: Metadata = {
     default: "BSCPLC Circuit Notifications",
     template: "%s | BSCPLC Circuit Notifications",
   },
-  description:
-    "Secure upstream circuit expiry tracking and notification operations for BSCPLC.",
+  description: PUBLIC_DESCRIPTION,
   icons: {
     icon: "/icon.png",
     apple: "/apple-icon.png",
   },
-  openGraph: {
-    type: "website",
-    url: "/login",
-    siteName: "BSCPLC Circuit Notifications",
-    title: "BSCPLC Circuit Notifications",
-    description: "Secure upstream circuit expiry tracking and notification operations for BSCPLC.",
-  },
+  openGraph: PUBLIC_OPEN_GRAPH,
   twitter: {
     card: "summary",
     title: "BSCPLC Circuit Notifications",
-    description: "Secure upstream circuit expiry tracking and notification operations for BSCPLC.",
+    description: PUBLIC_DESCRIPTION,
   },
 };
 

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { BrandLogo } from "@/components/brand-logo";
 import { LoginForm } from "@/components/login-form";
 import { getPublicConfig } from "@/lib/config";
+import { PUBLIC_OPEN_GRAPH } from "@/lib/public-metadata";
 
 type LoginPageProps = {
   searchParams: Promise<{ error?: string; notice?: string; method?: string }>;
@@ -11,7 +12,11 @@ type LoginPageProps = {
 export const metadata: Metadata = {
   title: "Sign in",
   alternates: { canonical: "/login" },
-  openGraph: { url: "/login" },
+  openGraph: {
+    ...PUBLIC_OPEN_GRAPH,
+    url: "/login",
+    title: "Sign in | BSCPLC Circuit Notifications",
+  },
 };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
