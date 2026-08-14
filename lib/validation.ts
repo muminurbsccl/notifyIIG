@@ -57,38 +57,84 @@ export const providerManagerCircuitPatchSchema = z.object({
 
 export const importDecisionSchema = z.record(z.enum(["skip", "merge", "create"]));
 const importIssueCodeSchema = z.enum([
-  "INVALID_HEADER",
-  "UNSUPPORTED_SHEET",
+  "IGNORED_HELPER_SHEET", "UNKNOWN_WORKSHEET", "INVALID_SHEET_STRUCTURE", "REPEATED_HEADER",
   "MISSING_PROVIDER",
   "MISSING_IDENTIFIER",
-  "INVOICE_ONLY",
-  "AMBIGUOUS_IDENTIFIER",
-  "DUPLICATE_IDENTIFIER",
+  "INVALID_DATE", "CONTRADICTORY_DATES", "COMPOUND_COST", "UNMAPPED_CELL",
+  "DUPLICATE_IDENTIFIER", "CONFLICTING_DUPLICATE",
 ]);
+
+const canonicalUtcTimestampSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/).refine((value) => {
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
+}, "Use a canonical UTC timestamp");
+const importSourceSchema = z.object({ sheetName: z.string().trim().min(1).max(120), rowNumber: z.number().int().positive(), section: z.string().trim().min(1).max(120).optional() }).strict();
+const importIdentifierSchema = z.object({
+  kind: z.enum(["circuit", "link", "bscplc", "provider", "customer_link", "service_order", "alternate"]),
+  value: z.string().trim().min(1).max(200), normalizedValue: z.string().min(1).max(200), primary: z.boolean(),
+}).strict();
+const nullableText = (maximum: number) => z.string().max(maximum).nullable();
+const importCandidateSchema = z.object({
+  candidateKey: z.string().min(3).max(300), providerCode: z.string().regex(/^[A-Z0-9]+(?:_[A-Z0-9]+)*$/).max(80), providerName: z.string().trim().min(1).max(160),
+  externalCircuitId: z.string().trim().min(1).max(200), identifierType: z.enum(["circuit", "link", "durable"]),
+  identifiers: z.array(importIdentifierSchema).min(1).max(50), serviceType: nullableText(120), capacity: nullableText(120), location: nullableText(200),
+  segment: nullableText(200), connectedRouter: nullableText(200), startDate: dateOnlySchema.nullable(), expiryDate: dateOnlySchema.nullable(),
+  renewalProcedureStartDate: dateOnlySchema.nullable(), monthlyCost: z.number().finite().nonnegative().max(999_999_999_999.99).nullable(),
+  currency: z.string().length(3).regex(/^[A-Z]{3}$/).nullable(), rawCostDetails: nullableText(5000), notes: nullableText(5000),
+  status: z.enum(["draft", "active", "expired"]), notificationEnabled: z.boolean(), ownerOverride: nullableText(160),
+  sources: z.array(importSourceSchema).min(1).max(100),
+}).strict().superRefine((candidate, context) => {
+  const primary = candidate.identifiers.filter((identifier) => identifier.primary);
+  if (primary.length !== 1) context.addIssue({ code: z.ZodIssueCode.custom, path: ["identifiers"], message: "Exactly one primary identifier is required" });
+  if (primary.length === 1) {
+    if (candidate.externalCircuitId !== primary[0].value) context.addIssue({ code: z.ZodIssueCode.custom, path: ["externalCircuitId"], message: "Display identifier must equal the primary identifier" });
+    if (candidate.candidateKey !== `${candidate.providerCode}:${primary[0].normalizedValue}`) context.addIssue({ code: z.ZodIssueCode.custom, path: ["candidateKey"], message: "Candidate key must be canonical" });
+  }
+  const normalized = new Set<string>();
+  for (const [index, identifier] of candidate.identifiers.entries()) {
+    if (normalizeCircuitId(identifier.value) !== identifier.normalizedValue) context.addIssue({ code: z.ZodIssueCode.custom, path: ["identifiers", index, "normalizedValue"], message: "Identifier normalization is not canonical" });
+    if (normalized.has(identifier.normalizedValue)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["identifiers", index, "normalizedValue"], message: "Normalized identifiers must be unique" });
+    normalized.add(identifier.normalizedValue);
+  }
+  if (candidate.startDate && candidate.expiryDate && candidate.startDate >= candidate.expiryDate) context.addIssue({ code: z.ZodIssueCode.custom, path: ["expiryDate"], message: "Expiry must follow activation" });
+  if (candidate.renewalProcedureStartDate && candidate.expiryDate && candidate.renewalProcedureStartDate > candidate.expiryDate) context.addIssue({ code: z.ZodIssueCode.custom, path: ["renewalProcedureStartDate"], message: "Procedure start cannot follow expiry" });
+  const lifecycleValid = candidate.status === "active"
+    ? Boolean(candidate.expiryDate && candidate.notificationEnabled && candidate.ownerOverride === "BSCPLC IIG Support")
+    : candidate.status === "draft"
+      ? candidate.expiryDate === null && !candidate.notificationEnabled && candidate.ownerOverride === null
+      : Boolean(candidate.expiryDate && !candidate.notificationEnabled && candidate.ownerOverride === null);
+  if (!lifecycleValid) context.addIssue({ code: z.ZodIssueCode.custom, path: ["status"], message: "Lifecycle, notification, owner, and expiry fields are inconsistent" });
+});
+const importPreviewSchema = z.object({
+  providers: z.array(z.object({ name: z.string().trim().min(1).max(160), code: z.string().regex(/^[A-Z0-9]+(?:_[A-Z0-9]+)*$/).max(80), sources: z.array(importSourceSchema).min(1).max(100) }).strict()).max(500),
+  circuitCandidates: z.array(importCandidateSchema).max(5000),
+  issues: z.array(z.object({ code: importIssueCodeSchema, severity: z.enum(["info", "warning", "error"]), message: z.string().min(1).max(1000), source: importSourceSchema.optional(), value: z.string().max(5000).optional(), decisionKey: z.string().max(300).optional() }).strict()).max(10000),
+  summary: z.object({ providerCount: z.number().int().nonnegative(), serviceCount: z.number().int().nonnegative(), activeCount: z.number().int().nonnegative(), expiredCount: z.number().int().nonnegative(), draftCount: z.number().int().nonnegative(), mergedCount: z.number().int().nonnegative() }).strict(),
+}).strict().superRefine((preview, context) => {
+  const expected = {
+    providerCount: preview.providers.length, serviceCount: preview.circuitCandidates.length,
+    activeCount: preview.circuitCandidates.filter((candidate) => candidate.status === "active").length,
+    expiredCount: preview.circuitCandidates.filter((candidate) => candidate.status === "expired").length,
+    draftCount: preview.circuitCandidates.filter((candidate) => candidate.status === "draft").length,
+  };
+  for (const [key, value] of Object.entries(expected)) if (preview.summary[key as keyof typeof expected] !== value) context.addIssue({ code: z.ZodIssueCode.custom, path: ["summary", key], message: "Summary does not match preview records" });
+  if (new Set(preview.providers.map((provider) => provider.code)).size !== preview.providers.length) context.addIssue({ code: z.ZodIssueCode.custom, path: ["providers"], message: "Provider codes must be unique" });
+  if (new Set(preview.circuitCandidates.map((candidate) => candidate.candidateKey)).size !== preview.circuitCandidates.length) context.addIssue({ code: z.ZodIssueCode.custom, path: ["circuitCandidates"], message: "Candidate keys must be unique" });
+});
 
 export const importCommitSchema = z.object({
   filename: z.string().trim().min(1).max(255),
   checksum: z.string().regex(/^[a-f0-9]{64}$/),
   previewChecksum: z.string().regex(/^[a-f0-9]{64}$/),
   previewSignature: z.string().regex(/^[a-f0-9]{64}$/),
-  sheetNames: z.array(z.string().max(120)).max(50),
-  preview: z.object({
-    providers: z.array(z.object({ name: z.string(), code: z.string(), source: z.object({ sheetName: z.string(), rowNumber: z.number().int().positive() }) })),
-    circuitCandidates: z.array(z.object({
-      providerName: z.string(),
-      externalCircuitId: z.string(),
-      identifierType: z.enum(["circuit", "link", "durable"]),
-      source: z.object({ sheetName: z.string(), rowNumber: z.number().int().positive() }),
-      duplicate: z.boolean().optional(),
-    })),
-    invoiceReferences: z.array(z.object({
-      providerName: z.string(),
-      referenceNumber: z.string(),
-      source: z.object({ sheetName: z.string(), rowNumber: z.number().int().positive() }),
-    })),
-    issues: z.array(z.object({ code: importIssueCodeSchema, message: z.string(), source: z.object({ sheetName: z.string(), rowNumber: z.number().int().positive() }).optional(), value: z.string().optional(), decisionKey: z.string().optional() })),
-  }),
+  previewIssuedAt: canonicalUtcTimestampSchema,
+  sheetNames: z.array(z.string().trim().min(1).max(120)).min(1).max(50).refine((names) => new Set(names).size === names.length, "Sheet names must be unique"),
+  preview: importPreviewSchema,
   decisions: importDecisionSchema.default({}),
+}).strict().superRefine((input, context) => {
+  const candidateKeys = new Set(input.preview.circuitCandidates.map((candidate) => candidate.candidateKey));
+  for (const key of Object.keys(input.decisions)) if (!candidateKeys.has(key)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["decisions", key], message: "Decision key does not match a candidate" });
+  for (const [index, issue] of input.preview.issues.entries()) if (issue.decisionKey && (!candidateKeys.has(issue.decisionKey) || !input.decisions[issue.decisionKey])) context.addIssue({ code: z.ZodIssueCode.custom, path: ["preview", "issues", index, "decisionKey"], message: "Issue requires a canonical reviewed decision" });
 });
 
 export const resendSchema = z.object({ reason: z.string().trim().min(5).max(1000) });

@@ -3,7 +3,6 @@ import { requireApiProfile } from "@/lib/auth";
 import { jsonError } from "@/lib/http";
 import { importCommitSchema } from "@/lib/validation";
 import { computePreviewChecksum, verifyPreviewSignature } from "@/lib/import/xlsx";
-import { canonicalCircuitId } from "@/lib/domain/import-normalizer";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
 
 const approvedCountKeys = ["createdCircuits", "skippedCircuits", "mergedCircuits", "versionedCircuits", "invoiceCount"] as const;
@@ -31,20 +30,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: { code: "INVALID_JSON", message: "Request body must be valid JSON" } }, { status: 400 });
     }
     const input = importCommitSchema.parse(payload);
-    const candidateKeys = new Set(input.preview.circuitCandidates.map((candidate) => `${candidate.providerName.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "")}:${canonicalCircuitId(candidate.externalCircuitId)}`));
-    for (const key of Object.keys(input.decisions)) {
-      if (!candidateKeys.has(key)) {
-        return NextResponse.json({ error: { code: "UNKNOWN_IMPORT_DECISION", message: `Import decision does not match a preview candidate: ${key}` } }, { status: 422 });
-      }
-    }
-    for (const issue of input.preview.issues.filter((item) => item.code === "DUPLICATE_IDENTIFIER")) {
-      if (!issue.decisionKey || !input.decisions[issue.decisionKey]) {
-        return NextResponse.json({ error: { code: "DUPLICATE_DECISION_REQUIRED", message: "Every duplicate identifier requires skip, merge, or create review" } }, { status: 422 });
-      }
+    if (input.preview.issues.some((issue) => issue.severity === "error")) {
+      return NextResponse.json({ error: { code: "IMPORT_PREVIEW_BLOCKED", message: "Resolve all blocking preview issues before commit" } }, { status: 422 });
     }
     if (
       computePreviewChecksum(input.preview) !== input.previewChecksum ||
-      !verifyPreviewSignature(input.previewChecksum, input.checksum, input.previewSignature, input.filename, input.sheetNames)
+      !verifyPreviewSignature(input.previewChecksum, input.checksum, input.previewSignature, input.filename, input.sheetNames, input.previewIssuedAt)
     ) {
       return NextResponse.json(
         { error: { code: "PREVIEW_CHANGED", message: "The preview changed or expired; upload and review the workbook again" } },
@@ -68,7 +59,6 @@ export async function POST(request: Request) {
         {
           error: { code: "IMPORT_COMMIT_REJECTED", message: "The import was rejected; review the workbook and try again" },
           batchId: result.batchId,
-          issues: input.preview.issues,
         },
         { status: 422 },
       );

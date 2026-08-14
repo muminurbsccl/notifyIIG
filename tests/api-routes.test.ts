@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   listCircuits: vi.fn(),
   toCircuitRow: vi.fn(),
   writeAudit: vi.fn(),
+  parseWorkbook: vi.fn(),
 }));
 
 class TestAuthError extends Error {
@@ -19,6 +20,7 @@ vi.mock("server-only", () => ({}));
 vi.mock("@/lib/auth", () => ({ requireApiProfile: mocks.requireApiProfile, AuthError: TestAuthError }));
 vi.mock("@/lib/data", () => ({ listCircuits: mocks.listCircuits, toCircuitRow: mocks.toCircuitRow }));
 vi.mock("@/lib/audit", () => ({ writeAudit: mocks.writeAudit }));
+vi.mock("@/lib/import/xlsx", () => ({ parseWorkbook: mocks.parseWorkbook }));
 
 const { POST: createCircuit } = await import("@/app/api/circuits/route");
 const { POST: previewImport } = await import("@/app/api/import/preview/route");
@@ -69,5 +71,18 @@ describe("authenticated API contracts", () => {
     const response = await previewImport(new Request("http://localhost/api/import/preview", { method: "POST" }));
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({ error: { code: "FILE_REQUIRED" } });
+  });
+
+  it("allowlists the workbook preview response", async () => {
+    const normalized = {
+      filename: "synthetic.xlsx", checksum: "a".repeat(64), previewChecksum: "b".repeat(64), previewSignature: "c".repeat(64),
+      previewIssuedAt: "2030-01-01T00:00:00.000Z", sheetNames: ["Upstream (IPT)"], providers: [], circuitCandidates: [], issues: [],
+      summary: { providerCount: 0, serviceCount: 0, activeCount: 0, expiredCount: 0, draftCount: 0, mergedCount: 0 }, secretLikeField: "hidden",
+    };
+    mocks.parseWorkbook.mockResolvedValue(normalized);
+    const form = new FormData(); form.set("file", new File([new Uint8Array([1])], "synthetic.xlsx"));
+    const response = await previewImport(new Request("http://localhost/api/import/preview", { method: "POST", body: form }));
+    const { secretLikeField: _secret, ...allowed } = normalized;
+    expect(await response.json()).toEqual({ preview: allowed });
   });
 });

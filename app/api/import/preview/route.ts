@@ -16,7 +16,9 @@ export async function POST(request: Request) {
     if (!file || typeof file !== "object" || typeof (file as { arrayBuffer?: unknown }).arrayBuffer !== "function") {
       return NextResponse.json({ error: { code: "FILE_REQUIRED", message: "Upload an XLSX workbook" } }, { status: 400 });
     }
-    return NextResponse.json({ preview: await parseWorkbook(file) });
+    const parsed = await parseWorkbook(file);
+    const { filename, checksum, previewChecksum, previewSignature, previewIssuedAt, sheetNames, providers, circuitCandidates, issues, summary } = parsed;
+    return NextResponse.json({ preview: { filename, checksum, previewChecksum, previewSignature, previewIssuedAt, sheetNames, providers, circuitCandidates, issues, summary } });
   } catch (cause) {
     return jsonError(cause);
   }
