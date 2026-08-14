@@ -100,34 +100,14 @@ textarea:focus-visible {
 
 .brand-logo-image {
   display: block;
-  width: auto;
-  height: 44px;
+  width: min(240px, 70vw);
+  height: auto;
   object-fit: contain;
 }
 
 .sidebar .brand-logo-image,
 .brand-lockup-compact .brand-logo-image {
-  height: 32px;
-}
-
-.brand-copy {
-  display: flex;
-  flex-direction: column;
-  letter-spacing: 0.01em;
-}
-
-.brand-copy strong {
-  font-size: 1.1rem;
-  letter-spacing: 0.08em;
-}
-
-.brand-copy small {
-  color: var(--muted);
-  font-size: 0.72rem;
-}
-
-.sidebar .brand-copy small {
-  color: #c7d9eb;
+  width: 140px;
 }
 
 .nav-list {
@@ -399,10 +379,13 @@ code {
     margin: 0 0 26px;
   }
 
-  .brand-lockup-compact .brand-copy,
   .nav-label,
   .sidebar-footer span:last-child {
     display: none;
+  }
+
+  .brand-lockup-compact .brand-logo-image {
+    width: 54px;
   }
 
   .nav-link {
