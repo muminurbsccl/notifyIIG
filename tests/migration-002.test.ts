@@ -12,9 +12,12 @@ describe("multi-sheet workbook import migration", () => {
   it("creates searchable identifiers, one primary, backfill, and parent RLS", () => {
     expect(migration).toContain("create table if not exists public.circuit_identifiers");
     expect(migration).toContain("references public.circuits(id) on delete cascade");
+    expect(migration).toMatch(/create unique index if not exists circuit_identifiers_unique_value_idx[\s\S]*\(circuit_id, normalized_value\)/);
     expect(migration).toMatch(/create unique index if not exists circuit_identifiers_one_primary_idx[\s\S]*where is_primary/);
+    expect(migration).toContain("create constraint trigger circuit_identifiers_require_primary");
     expect(migration).toMatch(/create index if not exists circuit_identifiers_normalized_search_idx[\s\S]*normalized_value/);
     expect(migration).toMatch(/insert into public\.circuit_identifiers[\s\S]*from public\.circuits/);
+    expect(migration).toMatch(/case when identifier_type = 'durable' then 'alternate'/);
     expect(migration).toContain("alter table public.circuit_identifiers enable row level security");
     expect(migration).toMatch(/create policy circuit_identifiers_select_scope[\s\S]*public\.has_provider_access\(c\.provider_id\)/);
     expect(migration).toMatch(/create policy circuit_identifiers_write_scope[\s\S]*public\.is_admin_or_editor\(\)[\s\S]*public\.has_provider_access\(c\.provider_id\)/);
@@ -28,6 +31,13 @@ describe("multi-sheet workbook import migration", () => {
     expect(migration).toContain("p_actor_user_id");
     expect(migration).toContain("timezone('utc', now())");
     expect(migration).toContain("BSCPLC IIG Support");
+    expect(migration).toContain("timezone('Asia/Dhaka', now())::date");
+    expect(migration).toContain("Imported lifecycle does not match database-derived lifecycle");
+    expect(migration).toContain("Imported notification or ownership state does not match lifecycle");
+    expect(migration).toContain("public.normalize_import_identifier");
+    expect(migration).toContain("Imported identifier normalization is invalid");
+    expect(migration).toMatch(/values \(provider_item->>'code', provider_item->>'name', false\)/);
+    expect(migration).not.toMatch(/update public\.providers[\s\S]{0,120}active = true/);
     for (const field of ["serviceType", "capacity", "location", "segment", "connectedRouter", "startDate", "expiryDate", "renewalProcedureStartDate", "monthlyCost", "currency", "rawCostDetails", "notes"]) {
       expect(migration).toContain(`item->>'${field}'`);
     }
@@ -39,7 +49,9 @@ describe("multi-sheet workbook import migration", () => {
     expect(migration).toMatch(/jsonb_array_elements\(coalesce\(provider_item->'sources'/);
     expect(migration).toContain("insert into public.circuit_identifiers");
     expect(migration).toContain("insert into public.source_lineage");
-    expect(migration).toContain("p_preview->'summary'");
+    expect(migration).not.toContain("p_preview->'summary'");
+    expect(migration).toContain("'providerCount'");
+    expect(migration).toContain("'serviceCount'");
     const auditInsert = migration.slice(migration.indexOf("insert into public.audit_logs"), migration.indexOf("return jsonb_build_object", migration.indexOf("insert into public.audit_logs")));
     expect(auditInsert).not.toContain("p_preview");
     expect(migration).toContain("preview_summary = jsonb_build_object('status', 'rejected', 'errorCode', 'IMPORT_COMMIT_FAILED')");
@@ -50,5 +62,12 @@ describe("multi-sheet workbook import migration", () => {
     expect(migration).toContain(`revoke all on function ${signature} from public`);
     expect(migration).toContain(`revoke all on function ${signature} from authenticated`);
     expect(migration).toContain(`grant execute on function ${signature} to service_role`);
+  });
+
+  it("serializes checksum replays and returns the prior committed result", () => {
+    expect(migration).toContain("import_batches_committed_checksum_idx");
+    expect(migration).toMatch(/pg_catalog\.pg_advisory_xact_lock\(hashtextextended\('import:' \|\| p_checksum/);
+    expect(migration).toContain("where checksum = p_checksum and status = 'committed'");
+    expect(migration).toContain("return jsonb_build_object('batchId', prior_batch_id, 'counts', prior_counts)");
   });
 });
