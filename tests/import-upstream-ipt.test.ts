@@ -28,4 +28,16 @@ describe("IP Transit sheet adapter", () => {
       "MISSING_IDENTIFIER", "CONTRADICTORY_DATES", "COMPOUND_COST",
     ]));
   });
+
+  it("collects independent row diagnostics and honors explicit provider over headings", () => {
+    const result = upstreamIptAdapter.parse({ name: "Upstream (IPT)", rows: [header,
+      ["Conflicting Heading"],
+      ["1", "", "", "IP Port", "10G", "Explicit Carrier", "", "", "bad-date", "14-Sep-31", "15-Sep-32", "", "Committed USD 500; burstable USD 100", "", "unexpected"],
+      ["2", "", "CIRCUIT-C", "IP Port", "10G", "Explicit Carrier", "", "", "15-Sep-30", "14-Sep-31", "15-Sep-32"],
+    ] }, "2030-01-01");
+    expect(result.issues.map((issue) => issue.code)).toEqual(expect.arrayContaining([
+      "MISSING_IDENTIFIER", "INVALID_DATE", "CONTRADICTORY_DATES", "COMPOUND_COST", "UNMAPPED_CELL",
+    ]));
+    expect(result.circuitCandidates[0].providerName).toBe("Explicit Carrier");
+  });
 });

@@ -29,4 +29,16 @@ describe("Backhaul sheet adapter", () => {
       expect.objectContaining({ kind: "provider", primary: true }),
     ]);
   });
+
+  it("uses a registered alias and collects complete row diagnostics", () => {
+    const result = upstreamBackhaulAdapter.parse({ name: "Upstream (Backhaul)", rows: [header,
+      ["TI Sparkle (Synthetic Site)"],
+      ["1", "", "", "10G", "Segment", "CORE", "bad-date", "1-Feb-31", "Committed USD 300; burstable USD 50", "2-Feb-31", "unexpected"],
+      ["2", "PROVIDER-3", "INTERNAL-3", "10G", "Segment", "CORE", "1-Feb-30", "1-Feb-31", "USD 300", "2-Feb-31"],
+    ] }, "2030-01-01");
+    expect(result.providers[0]).toMatchObject({ code: "TIS", name: "TI Sparkle" });
+    expect(result.issues.map((issue) => issue.code)).toEqual(expect.arrayContaining([
+      "MISSING_IDENTIFIER", "INVALID_DATE", "CONTRADICTORY_DATES", "COMPOUND_COST", "UNMAPPED_CELL",
+    ]));
+  });
 });

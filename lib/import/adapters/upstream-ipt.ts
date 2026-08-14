@@ -28,17 +28,19 @@ export const upstreamIptAdapter: WorkbookSheetAdapter = {
       if (!/^\d+$/.test(cellText(row[0]))) continue;
       const circuitId = cellText(row[2]);
       const provider = resolveCanonicalProvider("", cellText(row[5]));
-      if (!provider) { issues.push({ code: "MISSING_PROVIDER", severity: "error", message: "Circuit row has no provider", source }); continue; }
-      if (!circuitId) { issues.push({ code: "MISSING_IDENTIFIER", severity: "error", message: "Circuit row has no circuit ID", source }); continue; }
-      if (!providers.has(provider.code)) providers.set(provider.code, { ...provider, sources: [source] });
+      if (!provider) issues.push({ code: "MISSING_PROVIDER", severity: "error", message: "Circuit row has no provider", source });
+      if (!circuitId) issues.push({ code: "MISSING_IDENTIFIER", severity: "error", message: "Circuit row has no circuit ID", source });
       const startDate = dateValue(cellText(row[8]), source, issues);
       const expiryDate = dateValue(cellText(row[9]), source, issues);
       const renewalProcedureStartDate = dateValue(cellText(row[10]), source, issues);
       if (startDate && expiryDate && startDate >= expiryDate) issues.push({ code: "CONTRADICTORY_DATES", severity: "error", message: "Expiry must follow activation", source });
+      if (renewalProcedureStartDate && expiryDate && renewalProcedureStartDate > expiryDate) issues.push({ code: "CONTRADICTORY_DATES", severity: "error", message: "Procedure start cannot follow expiry", source });
       const cost = parseImportCost(cellText(row[12]));
       if (cost.rawDetails) issues.push({ code: "COMPOUND_COST", severity: "warning", message: "Monthly cost requires review", source, value: cost.rawDetails });
       const tracker = createConsumedColumns(); tracker.mark(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13);
       for (const cell of tracker.unconsumed(row)) issues.push({ code: "UNMAPPED_CELL", severity: "warning", message: `Unmapped column ${cell.columnIndex + 1}`, source, value: cell.value });
+      if (!provider || !circuitId) continue;
+      if (!providers.has(provider.code)) providers.set(provider.code, { ...provider, sources: [source] });
       const identifiers = [importIdentifier("circuit", circuitId, true)];
       const customerId = cellText(row[1]); if (customerId) identifiers.push(importIdentifier("customer_link", customerId, false));
       const lifecycle = classifyImportLifecycle(expiryDate, businessDate);
