@@ -41,7 +41,12 @@ export const internetExchangeAdapter: WorkbookSheetAdapter = {
 
     for (let index = headerIndex + 1; index < sheet.rows.length; index += 1) {
       const row = sheet.rows[index]; const source = { sheetName: sheet.name, rowNumber: index + 1 };
-      if (indexes.serial >= 0 && !/^\d+$/.test(value(row, indexes.serial))) continue;
+      if (row.every((cell) => !cellText(cell))) continue;
+      const rowHeaders = row.map(headerKey);
+      if (rowHeaders.includes("circuit id") && rowHeaders.some((key) => key === "permission expiry" || key === "permission expiration")) {
+        issues.push({ code: "REPEATED_HEADER", severity: "warning", message: "Repeated Internet Exchange header was ignored", source });
+        continue;
+      }
       const circuitId = value(row, indexes.circuit); const provider = resolveCanonicalProvider("", value(row, indexes.provider));
       if (!provider) issues.push({ code: "MISSING_PROVIDER", severity: "error", message: "Internet Exchange row has no provider", source });
       if (!circuitId) issues.push({ code: "MISSING_IDENTIFIER", severity: "error", message: "Internet Exchange row has no circuit ID", source });

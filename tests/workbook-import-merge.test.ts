@@ -44,4 +44,25 @@ describe("workbook import merge", () => {
     expect(preview.circuitCandidates).toHaveLength(1);
     expect(preview.issues).toContainEqual(expect.objectContaining({ code: "CONFLICTING_DUPLICATE", severity: "error" }));
   });
+
+  it("returns the same complete preview for reversed input with tied source keys", () => {
+    const first = candidate({ notes: "Alpha" });
+    const second = candidate({ monthlyCost: 500, currency: "USD", notes: "Beta", status: "draft", notificationEnabled: false, ownerOverride: null });
+    expect(mergeAdapterResults([result([first, second])])).toEqual(mergeAdapterResults([result([second, first])]));
+  });
+
+  it("keeps one normalized primary identifier and reports incompatible duplicate roles", () => {
+    const preview = mergeAdapterResults([result([
+      candidate({ identifiers: [
+        { kind: "service_order", value: "SO-1", normalizedValue: "SO-1", primary: true },
+        { kind: "alternate", value: "so-1", normalizedValue: "SO-1", primary: false },
+      ] }),
+      candidate({ identifiers: [{ kind: "circuit", value: "SO-1", normalizedValue: "SO-1", primary: true }] }),
+    ])]);
+    expect(preview.circuitCandidates[0].identifiers).toEqual([
+      expect.objectContaining({ normalizedValue: "SO-1", primary: true }),
+    ]);
+    expect(preview.circuitCandidates[0].identifiers.filter((identifier) => identifier.primary)).toHaveLength(1);
+    expect(preview.issues.map((issue) => issue.code)).toEqual(expect.arrayContaining(["DUPLICATE_IDENTIFIER", "CONFLICTING_DUPLICATE"]));
+  });
 });

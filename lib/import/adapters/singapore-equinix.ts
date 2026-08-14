@@ -24,22 +24,32 @@ export const singaporeEquinixAdapter: WorkbookSheetAdapter = {
       if (!section || isBlankRow(row)) continue;
       const source = { sheetName: sheet.name, rowNumber: index + 1, section: section.kind };
       const at = (...names: string[]) => { const position = findColumn(section!.headers, ...names); return position < 0 ? "" : cellText(row[position]); };
-      const orderValues = splitMultiline(at("service order", "service order number")); const rawCost = at("monthly cost", "cost");
-      if (section.kind === "billing" && orderValues.length === 0 && rawCost && lastBillingCandidate) {
-        const cost = parseImportCost(rawCost); lastBillingCandidate.monthlyCost = cost.monthlyCost; lastBillingCandidate.currency = cost.currency;
-        lastBillingCandidate.rawCostDetails = cost.rawDetails;
+      const rawOrderValues = splitMultiline(at("service order", "service order number")); const rawCost = at("monthly cost", "cost");
+      const known = ["service order", "service order number", "provider name", "provider", "service type", "service", "capacity", "location", "activation date", "activation", "expiry date", "expiry", "monthly cost", "cost", "notes", "remark"];
+      const knownIndexes = section.headers.map((header, columnIndex) => known.includes(header) ? columnIndex : -1).filter((columnIndex) => columnIndex >= 0);
+      const tracker = createConsumedColumns(); tracker.mark(...knownIndexes);
+      for (const cell of tracker.unconsumed(row)) issues.push({ code: "UNMAPPED_CELL", severity: "warning", message: `Unmapped column ${cell.columnIndex + 1}`, source, value: cell.value });
+      const costIndex = findColumn(section.headers, "monthly cost", "cost");
+      const populatedIndexes = row.map((cell, columnIndex) => cellText(cell) ? columnIndex : -1).filter((columnIndex) => columnIndex >= 0);
+      const isContinuation = section.kind === "billing" && rawOrderValues.length === 0 && Boolean(rawCost) && Boolean(lastBillingCandidate)
+        && populatedIndexes.every((columnIndex) => columnIndex === costIndex);
+      if (isContinuation && lastBillingCandidate) {
+        const cost = parseImportCost(rawCost); lastBillingCandidate.monthlyCost = cost.monthlyCost; lastBillingCandidate.currency = cost.currency; lastBillingCandidate.rawCostDetails = cost.rawDetails;
         if (cost.rawDetails) issues.push({ code: "COMPOUND_COST", severity: "warning", message: "Monthly cost requires review", source, value: cost.rawDetails });
         continue;
       }
-      if (orderValues.length === 0) { if (row.some((cell) => cellText(cell))) issues.push({ code: "MISSING_IDENTIFIER", severity: "error", message: "Equinix row has no service order", source }); continue; }
-      const primary = orderValues[0]; const provider = resolveCanonicalProvider("", at("provider name", "provider") || "Equinix");
       const startDate = section.kind === "service" ? parseDate(at("activation date", "activation"), source) : null;
       const expiryDate = section.kind === "service" ? parseDate(at("expiry date", "expiry"), source) : null;
       if (startDate && expiryDate && startDate >= expiryDate) issues.push({ code: "CONTRADICTORY_DATES", severity: "error", message: "Expiry must follow activation", source });
       const cost = parseImportCost(rawCost); if (cost.rawDetails) issues.push({ code: "COMPOUND_COST", severity: "warning", message: "Monthly cost requires review", source, value: cost.rawDetails });
-      const known = ["service order", "service order number", "provider name", "provider", "service type", "service", "capacity", "location", "activation date", "activation", "expiry date", "expiry", "monthly cost", "cost", "notes", "remark"];
-      const tracker = createConsumedColumns(); tracker.mark(...section.headers.map((header, columnIndex) => known.includes(header) ? columnIndex : -1).filter((columnIndex) => columnIndex >= 0));
-      for (const cell of tracker.unconsumed(row)) issues.push({ code: "UNMAPPED_CELL", severity: "warning", message: `Unmapped column ${cell.columnIndex + 1}`, source, value: cell.value });
+      if (rawOrderValues.length === 0) { issues.push({ code: "MISSING_IDENTIFIER", severity: "error", message: "Equinix row has no service order", source }); continue; }
+      const orderValues: string[] = []; const normalizedOrders = new Set<string>();
+      for (const orderValue of rawOrderValues) {
+        const normalized = normalizeIdentifier(orderValue);
+        if (normalizedOrders.has(normalized)) { issues.push({ code: "DUPLICATE_IDENTIFIER", severity: "warning", message: `Duplicate service order ${normalized} was ignored`, source, value: orderValue }); continue; }
+        normalizedOrders.add(normalized); orderValues.push(orderValue);
+      }
+      const primary = orderValues[0]; const provider = resolveCanonicalProvider("", at("provider name", "provider") || "Equinix");
       if (!provider) { issues.push({ code: "MISSING_PROVIDER", severity: "error", message: "Equinix row has no provider", source }); continue; }
       if (!providers.has(provider.code)) providers.set(provider.code, { ...provider, sources: [source] });
       const candidate: CircuitImportCandidate = {

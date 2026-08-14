@@ -30,4 +30,23 @@ describe("Internet Exchange sheet adapter", () => {
     ]));
     expect(result.issues.filter((issue) => issue.code === "INVALID_DATE")).toHaveLength(2);
   });
+
+  it("recognizes data without numeric serials and reports repeated headers", () => {
+    const result = internetExchangeAdapter.parse({ name: "Internet Exchange", rows: [header,
+      header,
+      ["", "LINK-BLANK", "CIRCUIT-BLANK", "Synthetic Exchange", "Peering", "1G", "1-Jan-30", "", "1-Jan-32"],
+      ["not-a-number", "LINK-TEXT", "CIRCUIT-TEXT", "Synthetic Exchange", "Peering", "1G", "1-Jan-30", "", "1-Jan-32"],
+    ] }, "2030-01-01");
+    expect(result.circuitCandidates.map((candidate) => candidate.externalCircuitId)).toEqual(["CIRCUIT-BLANK", "CIRCUIT-TEXT"]);
+    expect(result.issues).toContainEqual(expect.objectContaining({ code: "REPEATED_HEADER", source: expect.objectContaining({ rowNumber: 2 }) }));
+  });
+
+  it("classifies expired and incomplete permission records safely", () => {
+    const result = internetExchangeAdapter.parse({ name: "Internet Exchange", rows: [header,
+      ["1", "", "CIRCUIT-OLD", "Synthetic Exchange", "Peering", "1G", "1-Jan-28", "", "1-Jan-29"],
+      ["2", "", "CIRCUIT-DRAFT", "Synthetic Exchange", "Peering", "1G", "1-Jan-30", "Contract narrative", ""],
+    ] }, "2030-01-01");
+    expect(result.circuitCandidates[0]).toMatchObject({ status: "expired", notificationEnabled: false, ownerOverride: null });
+    expect(result.circuitCandidates[1]).toMatchObject({ status: "draft", notificationEnabled: false, ownerOverride: null });
+  });
 });
