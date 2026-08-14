@@ -4,10 +4,11 @@ import { getPublicConfig } from "@/lib/config";
 import { isExpectedUnauthenticatedError } from "@/lib/domain/auth-errors";
 
 const publicPaths = ["/login", "/setup"];
+const middlewareBypassPaths = ["/auth/callback", "/robots.txt", "/favicon.ico", "/icon.png"];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if (pathname.startsWith("/_next/") || pathname === "/favicon.ico") {
+  if (pathname.startsWith("/_next/") || middlewareBypassPaths.includes(pathname)) {
     return NextResponse.next();
   }
 

@@ -19,6 +19,13 @@ describe("authentication boundary artifacts", () => {
     expect(middleware).toContain("AUTH_SERVICE_UNAVAILABLE");
   });
 
+  it("lets the callback and public metadata routes reach their handlers", () => {
+    expect(middleware).toContain('"/auth/callback"');
+    expect(middleware).toContain('"/robots.txt"');
+    expect(middleware).toContain('"/icon.png"');
+    expect(middleware).toContain("middlewareBypassPaths.includes(pathname)");
+  });
+
   it("distinguishes auth service errors from invalid sessions", () => {
     expect(isExpectedUnauthenticatedError({ name: "AuthSessionMissingError", status: 400 })).toBe(true);
     expect(isExpectedUnauthenticatedError({ status: 401 })).toBe(true);
