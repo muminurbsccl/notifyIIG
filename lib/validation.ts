@@ -136,6 +136,7 @@ const semanticImportTransportFields = {
   previewIssuedAt: canonicalUtcTimestampSchema,
   sheetNames: z.array(canonicalImportText(120)).min(1).max(50).refine((names) => new Set(names).size === names.length, "Sheet names must be unique"),
 };
+export const workbookPreviewMetadataSchema = z.object(semanticImportTransportFields).strict();
 const rawImportTransportFields = {
   filename: z.string().min(1).max(255), checksum: z.string().regex(/^[a-f0-9]{64}$/), previewChecksum: z.string().regex(/^[a-f0-9]{64}$/),
   previewSignature: z.string().regex(/^[a-f0-9]{64}$/), previewIssuedAt: canonicalUtcTimestampSchema,

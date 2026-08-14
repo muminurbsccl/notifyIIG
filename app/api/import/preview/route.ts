@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { requireApiProfile } from "@/lib/auth";
 import { findExistingImportCandidateKeys } from "@/lib/data";
-import { jsonError } from "@/lib/http";
+import { InputError, jsonError } from "@/lib/http";
 import { computePreviewChecksum, computePreviewSignature, parseWorkbook } from "@/lib/import/xlsx";
-import { workbookImportPreviewSchema } from "@/lib/validation";
+import { workbookImportPreviewSchema, workbookPreviewMetadataSchema } from "@/lib/validation";
 
 export async function POST(request: Request) {
   try {
@@ -19,6 +19,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: { code: "FILE_REQUIRED", message: "Upload an XLSX workbook" } }, { status: 400 });
     }
     const parsed = await parseWorkbook(file);
+    const metadataResult = workbookPreviewMetadataSchema.safeParse({ filename: parsed.filename, checksum: parsed.checksum, previewChecksum: parsed.previewChecksum,
+      previewSignature: parsed.previewSignature, previewIssuedAt: parsed.previewIssuedAt, sheetNames: parsed.sheetNames });
+    if (!metadataResult.success) throw new InputError("NONCANONICAL_WORKBOOK_METADATA", "Workbook filename or sheet names contain unsupported surrounding whitespace", 422);
     const normalizedResult = workbookImportPreviewSchema.safeParse({ providers: parsed.providers, circuitCandidates: parsed.circuitCandidates, issues: parsed.issues, summary: parsed.summary });
     if (!normalizedResult.success) throw new Error("Workbook parser returned an invalid preview");
     const normalized = normalizedResult.data;

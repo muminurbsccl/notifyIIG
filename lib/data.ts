@@ -71,19 +71,33 @@ export async function listCircuits(
 
 export async function findExistingImportCandidateKeys(
   supabase: SupabaseClient,
-  candidates: readonly { providerCode: string; identifiers: readonly { normalizedValue: string; primary: boolean }[] }[],
+  candidates: readonly { candidateKey: string; providerCode: string; providerName: string; identifiers: readonly { normalizedValue: string; primary: boolean }[] }[],
 ): Promise<Set<string>> {
   if (candidates.length === 0) return new Set();
-  const providerCodes = [...new Set(candidates.map((candidate) => candidate.providerCode))];
   const normalizedValues = [...new Set(candidates.flatMap((candidate) => candidate.identifiers.filter((identifier) => identifier.primary).map((identifier) => identifier.normalizedValue)))];
-  const { data: providers, error: providerError } = await supabase.from("providers").select("id,code").in("code", providerCodes);
+  const { data: providers, error: providerError } = await supabase.from("providers").select("id,code,name");
   if (providerError) throw providerError;
-  const providerById = new Map((providers ?? []).map((provider) => [String(provider.id), String(provider.code)]));
-  if (providerById.size === 0 || normalizedValues.length === 0) return new Set();
+  const providerByCode = new Map((providers ?? []).map((provider) => [String(provider.code), String(provider.id)]));
+  const providersByName = new Map<string, string[]>();
+  for (const provider of providers ?? []) {
+    const key = String(provider.name).toUpperCase(); const matches = providersByName.get(key) ?? []; matches.push(String(provider.id)); providersByName.set(key, matches);
+  }
+  const candidateProvider = new Map<string, string>();
+  for (const candidate of candidates) {
+    const exact = providerByCode.get(candidate.providerCode); const nameMatches = providersByName.get(candidate.providerName.toUpperCase()) ?? [];
+    const providerId = exact ?? (nameMatches.length === 1 ? nameMatches[0] : undefined);
+    if (providerId) candidateProvider.set(candidate.candidateKey, providerId);
+  }
+  const providerIds = [...new Set(candidateProvider.values())];
+  if (providerIds.length === 0 || normalizedValues.length === 0) return new Set();
   const { data: circuits, error: circuitError } = await supabase.from("circuits").select("provider_id,normalized_circuit_id,status")
-    .in("provider_id", [...providerById.keys()]).in("normalized_circuit_id", normalizedValues).neq("status", "archived");
+    .in("provider_id", providerIds).in("normalized_circuit_id", normalizedValues).neq("status", "archived");
   if (circuitError) throw circuitError;
-  return new Set((circuits ?? []).map((circuit) => `${providerById.get(String(circuit.provider_id))}:${String(circuit.normalized_circuit_id)}`));
+  const existingPairs = new Set((circuits ?? []).map((circuit) => `${String(circuit.provider_id)}:${String(circuit.normalized_circuit_id)}`));
+  return new Set(candidates.filter((candidate) => {
+    const providerId = candidateProvider.get(candidate.candidateKey); const primary = candidate.identifiers.find((identifier) => identifier.primary);
+    return Boolean(providerId && primary && existingPairs.has(`${providerId}:${primary.normalizedValue}`));
+  }).map((candidate) => candidate.candidateKey));
 }
 
 export async function getCircuit(

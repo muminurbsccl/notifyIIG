@@ -115,4 +115,16 @@ describe("authenticated API contracts", () => {
     expect(body.preview.issues).toContainEqual(expect.objectContaining({ code: "EXISTING_RECORD_COLLISION", decisionKey: "SYNTHETIC:C-1" }));
     expect(body.preview.previewChecksum).toBe("d".repeat(64)); expect(body.preview.previewSignature).toBe("e".repeat(64));
   });
+
+  it.each([
+    ["filename", " synthetic.xlsx", ["Upstream (IPT)"]],
+    ["sheet name", "synthetic.xlsx", ["Upstream (IPT)", " Notes "]],
+  ])("rejects noncanonical parser-produced %s before signing", async (_name, filename, sheetNames) => {
+    mocks.parseWorkbook.mockResolvedValue({ filename, checksum: "a".repeat(64), previewChecksum: "b".repeat(64), previewSignature: "c".repeat(64),
+      previewIssuedAt: "2030-01-01T00:00:00.000Z", sheetNames, providers: [], circuitCandidates: [], issues: [],
+      summary: { providerCount: 0, inputCandidateCount: 0, serviceCount: 0, activeCount: 0, expiredCount: 0, draftCount: 0, mergedCount: 0 } });
+    const form = new FormData(); form.set("file", new File([new Uint8Array([1])], filename));
+    const response = await previewImport(new Request("http://localhost/api/import/preview", { method: "POST", body: form }));
+    expect(response.status).toBe(422); expect(mocks.computePreviewSignature).not.toHaveBeenCalled();
+  });
 });

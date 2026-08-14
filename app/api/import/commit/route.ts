@@ -6,10 +6,10 @@ import { importCommitSchema, importCommitTransportSchema } from "@/lib/validatio
 import { computePreviewChecksum, verifyPreviewSignature } from "@/lib/import/xlsx";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
 
-const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const countSchema = z.object({ createdCircuits: z.number().int().nonnegative(), skippedCircuits: z.number().int().nonnegative(), mergedCircuits: z.number().int().nonnegative(), versionedCircuits: z.number().int().nonnegative(), invoiceCount: z.number().int().nonnegative() }).strict();
-const commitSuccessSchema = z.object({ batchId: z.string().regex(uuidPattern), counts: countSchema }).strict();
-const commitRejectionSchema = z.object({ status: z.literal("rejected"), batchId: z.string().regex(uuidPattern), errorCode: z.literal("IMPORT_COMMIT_FAILED") }).strict();
+const strictUuidSchema = z.string().uuid().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+const commitSuccessSchema = z.object({ batchId: strictUuidSchema, counts: countSchema }).strict();
+const commitRejectionSchema = z.object({ status: z.literal("rejected"), batchId: strictUuidSchema, errorCode: z.literal("IMPORT_COMMIT_FAILED") }).strict();
 
 export async function POST(request: Request) {
   try {

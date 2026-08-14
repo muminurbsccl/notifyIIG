@@ -9,6 +9,7 @@ vi.mock("@/lib/supabase/service", () => ({ createServiceSupabaseClient: () => ({
 
 const { POST: commitImport } = await import("@/app/api/import/commit/route");
 const actorId = "00000000-0000-0000-0000-000000000001";
+const batchId = "00000000-0000-4000-8000-000000000002";
 const previewChecksum = "a".repeat(64); const fileChecksum = "b".repeat(64); const issuedAt = "2030-01-01T00:00:00.000Z";
 const validCounts = { createdCircuits: 1, skippedCircuits: 0, mergedCircuits: 0, versionedCircuits: 0, invoiceCount: 0 };
 
@@ -45,7 +46,7 @@ describe("import commit service boundary", () => {
     vi.clearAllMocks();
     mocks.requireApiProfile.mockResolvedValue({ user: { id: actorId }, profile: { role: "admin" }, supabase: {} });
     mocks.computePreviewChecksum.mockReturnValue(previewChecksum); mocks.verifyPreviewSignature.mockReturnValue(true);
-    mocks.serviceRpc.mockResolvedValue({ data: { batchId: "00000000-0000-0000-0000-000000000002", counts: validCounts }, error: null });
+    mocks.serviceRpc.mockResolvedValue({ data: { batchId, counts: validCounts }, error: null });
   });
 
   it("commits a validated preview with issued-at signature binding", async () => {
@@ -132,14 +133,14 @@ describe("import commit service boundary", () => {
   });
 
   it("allowlists successful and rejected responses", async () => {
-    mocks.serviceRpc.mockResolvedValueOnce({ data: { batchId: "00000000-0000-0000-0000-000000000002", counts: validCounts }, error: null });
-    expect(await (await commitImport(request())).json()).toEqual({ batchId: "00000000-0000-0000-0000-000000000002", counts: validCounts });
-    mocks.serviceRpc.mockResolvedValueOnce({ data: { status: "rejected", batchId: "00000000-0000-0000-0000-000000000002", errorCode: "IMPORT_COMMIT_FAILED" }, error: null });
-    expect(await (await commitImport(request())).json()).toEqual({ error: { code: "IMPORT_COMMIT_REJECTED", message: "The import was rejected; review the workbook and try again" }, batchId: "00000000-0000-0000-0000-000000000002" });
+    mocks.serviceRpc.mockResolvedValueOnce({ data: { batchId, counts: validCounts }, error: null });
+    expect(await (await commitImport(request())).json()).toEqual({ batchId, counts: validCounts });
+    mocks.serviceRpc.mockResolvedValueOnce({ data: { status: "rejected", batchId, errorCode: "IMPORT_COMMIT_FAILED" }, error: null });
+    expect(await (await commitImport(request())).json()).toEqual({ error: { code: "IMPORT_COMMIT_REJECTED", message: "The import was rejected; review the workbook and try again" }, batchId });
   });
 
   it("rejects malformed database count objects", async () => {
-    mocks.serviceRpc.mockResolvedValue({ data: { batchId: "00000000-0000-0000-0000-000000000002", counts: { ...validCounts, nested: {} } }, error: null });
+    mocks.serviceRpc.mockResolvedValue({ data: { batchId, counts: { ...validCounts, nested: {} } }, error: null });
     expect((await commitImport(request())).status).toBe(500);
   });
 
@@ -150,9 +151,17 @@ describe("import commit service boundary", () => {
   });
 
   it("rejects unknown RPC status and rejection shapes", async () => {
-    mocks.serviceRpc.mockResolvedValueOnce({ data: { status: "unexpected", batchId: "00000000-0000-0000-0000-000000000002", counts: validCounts }, error: null });
+    mocks.serviceRpc.mockResolvedValueOnce({ data: { status: "unexpected", batchId, counts: validCounts }, error: null });
     expect((await commitImport(request())).status).toBe(500);
-    mocks.serviceRpc.mockResolvedValueOnce({ data: { status: "rejected", batchId: "00000000-0000-0000-0000-000000000002" }, error: null });
+    mocks.serviceRpc.mockResolvedValueOnce({ data: { status: "rejected", batchId }, error: null });
+    expect((await commitImport(request())).status).toBe(500);
+  });
+
+  it("rejects UUID-shaped RPC identifiers with invalid version or variant", async () => {
+    const malformed = "00000000-0000-0000-0000-000000000002";
+    mocks.serviceRpc.mockResolvedValueOnce({ data: { batchId: malformed, counts: validCounts }, error: null });
+    expect((await commitImport(request())).status).toBe(500);
+    mocks.serviceRpc.mockResolvedValueOnce({ data: { status: "rejected", batchId: malformed, errorCode: "IMPORT_COMMIT_FAILED" }, error: null });
     expect((await commitImport(request())).status).toBe(500);
   });
 });
