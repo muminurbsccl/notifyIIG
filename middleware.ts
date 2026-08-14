@@ -4,7 +4,15 @@ import { getPublicConfig } from "@/lib/config";
 import { isExpectedUnauthenticatedError } from "@/lib/domain/auth-errors";
 
 const publicPaths = ["/login", "/setup"];
-const middlewareBypassPaths = ["/auth/callback", "/robots.txt", "/favicon.ico", "/icon.png"];
+const middlewareBypassPaths = [
+  "/auth/callback",
+  "/robots.txt",
+  "/favicon.ico",
+  "/icon",
+  "/icon.png",
+  "/apple-icon",
+  "/apple-icon.png",
+];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

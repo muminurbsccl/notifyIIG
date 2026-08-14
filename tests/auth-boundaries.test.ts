@@ -23,6 +23,7 @@ describe("authentication boundary artifacts", () => {
     expect(middleware).toContain('"/auth/callback"');
     expect(middleware).toContain('"/robots.txt"');
     expect(middleware).toContain('"/icon.png"');
+    expect(middleware).toContain('"/apple-icon.png"');
     expect(middleware).toContain("middlewareBypassPaths.includes(pathname)");
   });
 
