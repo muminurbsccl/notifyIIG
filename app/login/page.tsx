@@ -1,10 +1,17 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { BrandLogo } from "@/components/brand-logo";
 import { LoginForm } from "@/components/login-form";
 import { getPublicConfig } from "@/lib/config";
 
 type LoginPageProps = {
   searchParams: Promise<{ error?: string; notice?: string; method?: string }>;
+};
+
+export const metadata: Metadata = {
+  title: "Sign in",
+  alternates: { canonical: "/login" },
+  openGraph: { url: "/login" },
 };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {

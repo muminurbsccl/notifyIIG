@@ -18,4 +18,25 @@ describe("public login rendering contract", () => {
     expect(page).toContain("await searchParams");
     expect(page).not.toContain("force-dynamic");
   });
+
+  it("declares production canonical and social metadata", () => {
+    const layout = readFileSync("app/layout.tsx", "utf8");
+    const page = readFileSync("app/login/page.tsx", "utf8");
+    expect(layout).toContain('metadataBase: new URL("https://notifyiig.vercel.app")');
+    expect(layout).toContain("openGraph:");
+    expect(layout).toContain("twitter:");
+    expect(layout).toContain("icons:");
+    expect(page).toContain('canonical: "/login"');
+  });
+
+  it("ships a valid public robots policy and PNG icon", () => {
+    const robots = readFileSync("app/robots.ts", "utf8");
+    const icon = readFileSync("app/icon.png");
+    expect(robots).toContain('allow: "/login"');
+    expect(robots).toContain('"/dashboard"');
+    expect(robots).toContain('"/circuits"');
+    expect(icon.subarray(0, 8)).toEqual(
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    );
+  });
 });
