@@ -76,4 +76,11 @@ describe("workbook import merge", () => {
     expect(preview.circuitCandidates[0].identifiers.filter((identifier) => identifier.primary)).toHaveLength(1);
     expect(preview.issues.map((issue) => issue.code)).toEqual(expect.arrayContaining(["DUPLICATE_IDENTIFIER", "CONFLICTING_DUPLICATE"]));
   });
+
+  it("excludes rejected no-primary candidates from admitted input provenance", () => {
+    const invalid = candidate({ identifiers: [{ kind: "alternate", value: "ALT-1", normalizedValue: "ALT-1", primary: false }] });
+    const preview = mergeAdapterResults([result([invalid])]);
+    expect(preview.summary).toMatchObject({ inputCandidateCount: 0, serviceCount: 0, mergedCount: 0 });
+    expect(preview.issues).toContainEqual(expect.objectContaining({ code: "MISSING_IDENTIFIER", severity: "error" }));
+  });
 });

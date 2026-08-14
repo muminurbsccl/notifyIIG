@@ -69,6 +69,23 @@ export async function listCircuits(
   return (data ?? []) as CircuitRecord[];
 }
 
+export async function findExistingImportCandidateKeys(
+  supabase: SupabaseClient,
+  candidates: readonly { providerCode: string; identifiers: readonly { normalizedValue: string; primary: boolean }[] }[],
+): Promise<Set<string>> {
+  if (candidates.length === 0) return new Set();
+  const providerCodes = [...new Set(candidates.map((candidate) => candidate.providerCode))];
+  const normalizedValues = [...new Set(candidates.flatMap((candidate) => candidate.identifiers.filter((identifier) => identifier.primary).map((identifier) => identifier.normalizedValue)))];
+  const { data: providers, error: providerError } = await supabase.from("providers").select("id,code").in("code", providerCodes);
+  if (providerError) throw providerError;
+  const providerById = new Map((providers ?? []).map((provider) => [String(provider.id), String(provider.code)]));
+  if (providerById.size === 0 || normalizedValues.length === 0) return new Set();
+  const { data: circuits, error: circuitError } = await supabase.from("circuits").select("provider_id,normalized_circuit_id,status")
+    .in("provider_id", [...providerById.keys()]).in("normalized_circuit_id", normalizedValues).neq("status", "archived");
+  if (circuitError) throw circuitError;
+  return new Set((circuits ?? []).map((circuit) => `${providerById.get(String(circuit.provider_id))}:${String(circuit.normalized_circuit_id)}`));
+}
+
 export async function getCircuit(
   supabase: SupabaseClient,
   profile: Profile,

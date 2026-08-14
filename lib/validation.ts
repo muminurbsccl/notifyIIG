@@ -60,10 +60,11 @@ const canonicalUtcTimestampSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
 }, "Use a canonical UTC timestamp");
-const importSourceSchema = z.object({ sheetName: z.string().trim().min(1).max(120), rowNumber: z.number().int().positive(), section: z.string().trim().min(1).max(120).optional() }).strict();
+const canonicalImportText = (maximum: number) => z.string().min(1).max(maximum).refine((value) => value === value.trim(), "Surrounding whitespace is not canonical");
+const importSourceSchema = z.object({ sheetName: canonicalImportText(120), rowNumber: z.number().int().positive(), section: canonicalImportText(120).optional() }).strict();
 const importIdentifierSchema = z.object({
   kind: z.enum(["circuit", "link", "bscplc", "provider", "customer_link", "service_order", "alternate"]),
-  value: z.string().trim().min(1).max(200), normalizedValue: z.string().min(1).max(200), primary: z.boolean(),
+  value: canonicalImportText(200), normalizedValue: z.string().min(1).max(200), primary: z.boolean(),
 }).strict();
 const issueShape = { message: z.string().min(1).max(1000), source: importSourceSchema.optional(), value: z.string().max(5000).optional() };
 const fixedIssue = <Code extends string, Severity extends "info" | "warning" | "error">(code: Code, severity: Severity) => z.object({ code: z.literal(code), severity: z.literal(severity), ...issueShape }).strict();
@@ -77,8 +78,8 @@ const importIssueSchema = z.discriminatedUnion("code", [
 ]);
 const nullableText = (maximum: number) => z.string().max(maximum).nullable();
 const importCandidateSchema = z.object({
-  candidateKey: z.string().min(3).max(300), providerCode: z.string().regex(/^[A-Z0-9]+(?:_[A-Z0-9]+)*$/).max(80), providerName: z.string().trim().min(1).max(160),
-  externalCircuitId: z.string().trim().min(1).max(200), identifierType: z.enum(["circuit", "link", "durable"]),
+  candidateKey: z.string().min(3).max(300), providerCode: z.string().regex(/^[A-Z0-9]+(?:_[A-Z0-9]+)*$/).max(80), providerName: canonicalImportText(160),
+  externalCircuitId: canonicalImportText(200), identifierType: z.enum(["circuit", "link", "durable"]),
   identifiers: z.array(importIdentifierSchema).min(1).max(50), serviceType: nullableText(120), capacity: nullableText(120), location: nullableText(200),
   segment: nullableText(200), connectedRouter: nullableText(200), startDate: dateOnlySchema.nullable(), expiryDate: dateOnlySchema.nullable(),
   renewalProcedureStartDate: dateOnlySchema.nullable(), monthlyCost: z.number().finite().nonnegative().max(999_999_999_999.99).nullable(),
@@ -107,8 +108,8 @@ const importCandidateSchema = z.object({
       : Boolean(candidate.expiryDate && !candidate.notificationEnabled && candidate.ownerOverride === null);
   if (!lifecycleValid) context.addIssue({ code: z.ZodIssueCode.custom, path: ["status"], message: "Lifecycle, notification, owner, and expiry fields are inconsistent" });
 });
-const importPreviewSchema = z.object({
-  providers: z.array(z.object({ name: z.string().trim().min(1).max(160), code: z.string().regex(/^[A-Z0-9]+(?:_[A-Z0-9]+)*$/).max(80), sources: z.array(importSourceSchema).min(1).max(100) }).strict()).max(500),
+export const workbookImportPreviewSchema = z.object({
+  providers: z.array(z.object({ name: canonicalImportText(160), code: z.string().regex(/^[A-Z0-9]+(?:_[A-Z0-9]+)*$/).max(80), sources: z.array(importSourceSchema).min(1).max(100) }).strict()).max(500),
   circuitCandidates: z.array(importCandidateSchema).max(5000),
   issues: z.array(importIssueSchema).max(10000),
   summary: z.object({ providerCount: z.number().int().nonnegative(), inputCandidateCount: z.number().int().nonnegative(), serviceCount: z.number().int().nonnegative(), activeCount: z.number().int().nonnegative(), expiredCount: z.number().int().nonnegative(), draftCount: z.number().int().nonnegative(), mergedCount: z.number().int().nonnegative() }).strict(),
@@ -127,18 +128,23 @@ const importPreviewSchema = z.object({
   for (const [index, candidate] of preview.circuitCandidates.entries()) if (providers.get(candidate.providerCode) !== candidate.providerName) context.addIssue({ code: z.ZodIssueCode.custom, path: ["circuitCandidates", index, "providerCode"], message: "Candidate provider must match the provider list" });
 });
 
-const importTransportFields = {
-  filename: z.string().trim().min(1).max(255),
+const semanticImportTransportFields = {
+  filename: canonicalImportText(255),
   checksum: z.string().regex(/^[a-f0-9]{64}$/),
   previewChecksum: z.string().regex(/^[a-f0-9]{64}$/),
   previewSignature: z.string().regex(/^[a-f0-9]{64}$/),
   previewIssuedAt: canonicalUtcTimestampSchema,
-  sheetNames: z.array(z.string().trim().min(1).max(120)).min(1).max(50).refine((names) => new Set(names).size === names.length, "Sheet names must be unique"),
+  sheetNames: z.array(canonicalImportText(120)).min(1).max(50).refine((names) => new Set(names).size === names.length, "Sheet names must be unique"),
 };
-export const importCommitTransportSchema = z.object({ ...importTransportFields, preview: z.unknown().refine((value) => value !== undefined), decisions: z.record(z.unknown()).default({}) }).strict();
+const rawImportTransportFields = {
+  filename: z.string().min(1).max(255), checksum: z.string().regex(/^[a-f0-9]{64}$/), previewChecksum: z.string().regex(/^[a-f0-9]{64}$/),
+  previewSignature: z.string().regex(/^[a-f0-9]{64}$/), previewIssuedAt: canonicalUtcTimestampSchema,
+  sheetNames: z.array(z.string().min(1).max(120)).min(1).max(50),
+};
+export const importCommitTransportSchema = z.object({ ...rawImportTransportFields, preview: z.unknown().refine((value) => value !== undefined), decisions: z.record(z.unknown()).default({}) }).strict();
 export const importCommitSchema = z.object({
-  ...importTransportFields,
-  preview: importPreviewSchema,
+  ...semanticImportTransportFields,
+  preview: workbookImportPreviewSchema,
   decisions: importDecisionSchema.default({}),
 }).strict().superRefine((input, context) => {
   const candidateKeys = new Set(input.preview.circuitCandidates.map((candidate) => candidate.candidateKey));

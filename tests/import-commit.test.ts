@@ -123,10 +123,18 @@ describe("import commit service boundary", () => {
     expect(mocks.verifyPreviewSignature).toHaveBeenCalled(); expect(mocks.serviceRpc).not.toHaveBeenCalled();
   });
 
+  it("authenticates exact untrimmed signed metadata", async () => {
+    mocks.verifyPreviewSignature.mockReturnValue(false);
+    const payload = JSON.parse(await request().text()); payload.filename = " reviewed.xlsx"; payload.sheetNames = ["Upstream (IPT) "];
+    const response = await commitImport(new Request("http://localhost/api/import/commit", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) }));
+    expect(mocks.verifyPreviewSignature).toHaveBeenCalledWith(previewChecksum, fileChecksum, "c".repeat(64), " reviewed.xlsx", ["Upstream (IPT) "], issuedAt);
+    expect(response.status).toBe(422); expect(await response.json()).toMatchObject({ error: { code: "PREVIEW_CHANGED" } }); expect(mocks.serviceRpc).not.toHaveBeenCalled();
+  });
+
   it("allowlists successful and rejected responses", async () => {
-    mocks.serviceRpc.mockResolvedValueOnce({ data: { batchId: "00000000-0000-0000-0000-000000000002", counts: validCounts, secretLikeField: "hidden" }, error: null });
+    mocks.serviceRpc.mockResolvedValueOnce({ data: { batchId: "00000000-0000-0000-0000-000000000002", counts: validCounts }, error: null });
     expect(await (await commitImport(request())).json()).toEqual({ batchId: "00000000-0000-0000-0000-000000000002", counts: validCounts });
-    mocks.serviceRpc.mockResolvedValueOnce({ data: { status: "rejected", batchId: "00000000-0000-0000-0000-000000000002", secretLikeField: "hidden" }, error: null });
+    mocks.serviceRpc.mockResolvedValueOnce({ data: { status: "rejected", batchId: "00000000-0000-0000-0000-000000000002", errorCode: "IMPORT_COMMIT_FAILED" }, error: null });
     expect(await (await commitImport(request())).json()).toEqual({ error: { code: "IMPORT_COMMIT_REJECTED", message: "The import was rejected; review the workbook and try again" }, batchId: "00000000-0000-0000-0000-000000000002" });
   });
 
@@ -139,5 +147,12 @@ describe("import commit service boundary", () => {
     mocks.serviceRpc.mockResolvedValue({ data: { status: "rejected", batchId: { nested: "hidden" } }, error: null });
     const response = await commitImport(request()); expect(response.status).toBe(500);
     expect(JSON.stringify(await response.json())).not.toContain("hidden");
+  });
+
+  it("rejects unknown RPC status and rejection shapes", async () => {
+    mocks.serviceRpc.mockResolvedValueOnce({ data: { status: "unexpected", batchId: "00000000-0000-0000-0000-000000000002", counts: validCounts }, error: null });
+    expect((await commitImport(request())).status).toBe(500);
+    mocks.serviceRpc.mockResolvedValueOnce({ data: { status: "rejected", batchId: "00000000-0000-0000-0000-000000000002" }, error: null });
+    expect((await commitImport(request())).status).toBe(500);
   });
 });

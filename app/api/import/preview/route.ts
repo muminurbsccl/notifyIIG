@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { requireApiProfile } from "@/lib/auth";
+import { findExistingImportCandidateKeys } from "@/lib/data";
 import { jsonError } from "@/lib/http";
-import { parseWorkbook } from "@/lib/import/xlsx";
-
-const publicSource = (source: { sheetName: string; rowNumber: number; section?: string }) => ({ sheetName: source.sheetName, rowNumber: source.rowNumber, ...(source.section ? { section: source.section } : {}) });
+import { computePreviewChecksum, computePreviewSignature, parseWorkbook } from "@/lib/import/xlsx";
+import { workbookImportPreviewSchema } from "@/lib/validation";
 
 export async function POST(request: Request) {
   try {
-    await requireApiProfile(["admin", "operations_editor"]);
+    const auth = await requireApiProfile(["admin", "operations_editor"]);
     let formData: FormData;
     try {
       formData = await request.formData();
@@ -19,28 +19,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: { code: "FILE_REQUIRED", message: "Upload an XLSX workbook" } }, { status: 400 });
     }
     const parsed = await parseWorkbook(file);
-    return NextResponse.json({ preview: {
-      filename: parsed.filename, checksum: parsed.checksum, previewChecksum: parsed.previewChecksum,
-      previewSignature: parsed.previewSignature, previewIssuedAt: parsed.previewIssuedAt, sheetNames: parsed.sheetNames,
-      providers: parsed.providers.map((provider) => ({ name: provider.name, code: provider.code, sources: provider.sources.map(publicSource) })),
-      circuitCandidates: parsed.circuitCandidates.map((candidate) => ({
-        candidateKey: candidate.candidateKey, providerCode: candidate.providerCode, providerName: candidate.providerName,
-        externalCircuitId: candidate.externalCircuitId, identifierType: candidate.identifierType,
-        identifiers: candidate.identifiers.map((identifier) => ({ kind: identifier.kind, value: identifier.value, normalizedValue: identifier.normalizedValue, primary: identifier.primary })),
-        serviceType: candidate.serviceType, capacity: candidate.capacity, location: candidate.location, segment: candidate.segment,
-        connectedRouter: candidate.connectedRouter, startDate: candidate.startDate, expiryDate: candidate.expiryDate,
-        renewalProcedureStartDate: candidate.renewalProcedureStartDate, monthlyCost: candidate.monthlyCost, currency: candidate.currency,
-        rawCostDetails: candidate.rawCostDetails, notes: candidate.notes, status: candidate.status,
-        notificationEnabled: candidate.notificationEnabled, ownerOverride: candidate.ownerOverride, sources: candidate.sources.map(publicSource),
+    const normalizedResult = workbookImportPreviewSchema.safeParse({ providers: parsed.providers, circuitCandidates: parsed.circuitCandidates, issues: parsed.issues, summary: parsed.summary });
+    if (!normalizedResult.success) throw new Error("Workbook parser returned an invalid preview");
+    const normalized = normalizedResult.data;
+    const existingKeys = await findExistingImportCandidateKeys(auth.supabase, normalized.circuitCandidates);
+    const enrichedResult = workbookImportPreviewSchema.safeParse({ ...normalized, issues: [...normalized.issues,
+      ...normalized.circuitCandidates.filter((candidate) => existingKeys.has(candidate.candidateKey)).map((candidate) => ({
+        code: "EXISTING_RECORD_COLLISION" as const, severity: "warning" as const,
+        message: "An existing circuit uses this provider and primary identifier; choose skip, merge, or create",
+        source: candidate.sources[0], decisionKey: candidate.candidateKey,
       })),
-      issues: parsed.issues.map((issue) => ({ code: issue.code, severity: issue.severity, message: issue.message,
-        ...(issue.source ? { source: publicSource(issue.source) } : {}), ...(issue.value !== undefined ? { value: issue.value } : {}),
-        ...(issue.decisionKey !== undefined ? { decisionKey: issue.decisionKey } : {}) })),
-      summary: {
-        providerCount: parsed.summary.providerCount, inputCandidateCount: parsed.summary.inputCandidateCount,
-        serviceCount: parsed.summary.serviceCount, activeCount: parsed.summary.activeCount, expiredCount: parsed.summary.expiredCount,
-        draftCount: parsed.summary.draftCount, mergedCount: parsed.summary.mergedCount,
-      },
+    ] });
+    if (!enrichedResult.success) throw new Error("Workbook collision enrichment returned an invalid preview");
+    const preview = enrichedResult.data;
+    const previewChecksum = computePreviewChecksum(preview);
+    const previewSignature = computePreviewSignature(previewChecksum, parsed.checksum, parsed.filename, parsed.sheetNames, parsed.previewIssuedAt);
+    return NextResponse.json({ preview: {
+      filename: parsed.filename, checksum: parsed.checksum, previewChecksum, previewSignature,
+      previewIssuedAt: parsed.previewIssuedAt, sheetNames: parsed.sheetNames, ...preview,
     } });
   } catch (cause) {
     return jsonError(cause);

@@ -35,7 +35,7 @@ function canonicalizeIdentifiers(identifiers: ImportIdentifier[], expectedPrimar
 }
 
 export function mergeAdapterResults(results: readonly SheetAdapterResult[]): ImportPreview {
-  const inputCandidateCount = results.reduce((count, result) => count + result.circuitCandidates.length, 0);
+  let inputCandidateCount = 0;
   const issues: ImportIssue[] = results.flatMap((result) => result.issues.map((issue) => ({ ...issue, source: issue.source ? { ...issue.source } : undefined })));
   const providerMap = new Map<string, ImportProvider>();
   for (const provider of results.flatMap((result) => result.providers).sort((a, b) => `${a.code}\u0000${a.name}\u0000${sourceKey(a.sources[0])}`.localeCompare(`${b.code}\u0000${b.name}\u0000${sourceKey(b.sources[0])}`))) {
@@ -51,6 +51,7 @@ export function mergeAdapterResults(results: readonly SheetAdapterResult[]): Imp
   for (const candidate of results.flatMap((result) => result.circuitCandidates)) {
     const primary = [...candidate.identifiers].filter((identifier) => identifier.primary).sort((a, b) => identifierKey(a).localeCompare(identifierKey(b)))[0];
     if (!primary) { issues.push({ code: "MISSING_IDENTIFIER", severity: "error", message: "Candidate has no primary identifier", source: candidate.sources[0] }); continue; }
+    inputCandidateCount += 1;
     const key = `${candidate.providerCode}:${primary.normalizedValue}`;
     const normalizedCandidate = cloneCandidate(candidate);
     normalizedCandidate.identifiers = canonicalizeIdentifiers(normalizedCandidate.identifiers, primary.normalizedValue, issues, normalizedCandidate.sources[0]);

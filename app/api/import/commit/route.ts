@@ -1,25 +1,15 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { requireApiProfile } from "@/lib/auth";
 import { jsonError } from "@/lib/http";
 import { importCommitSchema, importCommitTransportSchema } from "@/lib/validation";
 import { computePreviewChecksum, verifyPreviewSignature } from "@/lib/import/xlsx";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
 
-const approvedCountKeys = ["createdCircuits", "skippedCircuits", "mergedCircuits", "versionedCircuits", "invoiceCount"] as const;
 const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
-
-function parseCommitCounts(value: unknown): Record<string, number> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const record = value as Record<string, unknown>;
-  if (Object.keys(record).length !== approvedCountKeys.length) return null;
-  const counts: Record<string, number> = {};
-  for (const key of approvedCountKeys) {
-    const number = record[key];
-    if (typeof number !== "number" || !Number.isFinite(number) || !Number.isInteger(number) || number < 0) return null;
-    counts[key] = number;
-  }
-  return counts;
-}
+const countSchema = z.object({ createdCircuits: z.number().int().nonnegative(), skippedCircuits: z.number().int().nonnegative(), mergedCircuits: z.number().int().nonnegative(), versionedCircuits: z.number().int().nonnegative(), invoiceCount: z.number().int().nonnegative() }).strict();
+const commitSuccessSchema = z.object({ batchId: z.string().regex(uuidPattern), counts: countSchema }).strict();
+const commitRejectionSchema = z.object({ status: z.literal("rejected"), batchId: z.string().regex(uuidPattern), errorCode: z.literal("IMPORT_COMMIT_FAILED") }).strict();
 
 export async function POST(request: Request) {
   try {
@@ -55,22 +45,20 @@ export async function POST(request: Request) {
       p_decisions: input.decisions,
     });
     if (error) throw error;
-    const result = (data ?? {}) as Record<string, unknown>;
-    if (result.status === "rejected") {
-      if (typeof result.batchId !== "string" || !uuidPattern.test(result.batchId)) throw new Error("Import commit returned an invalid rejection result");
+    if (data && typeof data === "object" && !Array.isArray(data) && (data as Record<string, unknown>).status === "rejected") {
+      const rejected = commitRejectionSchema.safeParse(data);
+      if (!rejected.success) throw new Error("Import commit returned an invalid rejection result");
       return NextResponse.json(
         {
           error: { code: "IMPORT_COMMIT_REJECTED", message: "The import was rejected; review the workbook and try again" },
-          batchId: result.batchId,
+          batchId: rejected.data.batchId,
         },
         { status: 422 },
       );
     }
-    const counts = parseCommitCounts(result.counts);
-    if (typeof result.batchId !== "string" || !uuidPattern.test(result.batchId) || !counts) {
-      throw new Error("Import commit returned an invalid result");
-    }
-    return NextResponse.json({ batchId: result.batchId, counts });
+    const committed = commitSuccessSchema.safeParse(data);
+    if (!committed.success) throw new Error("Import commit returned an invalid result");
+    return NextResponse.json(committed.data);
   } catch (cause) {
     return jsonError(cause);
   }
