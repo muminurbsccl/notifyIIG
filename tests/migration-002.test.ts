@@ -17,6 +17,8 @@ describe("multi-sheet workbook import migration", () => {
     expect(migration).toContain("create constraint trigger circuit_identifiers_require_primary");
     expect(migration).toContain("normalized_value = public.normalize_import_identifier(original_value)");
     expect(migration).toContain("old.circuit_id is distinct from new.circuit_id");
+    expect(migration).toContain("Primary identifier must match circuit compatibility values");
+    expect(migration).toMatch(/ci\.original_value is distinct from c\.external_circuit_id[\s\S]*ci\.normalized_value is distinct from c\.normalized_circuit_id/);
     expect(migration).toMatch(/create index if not exists circuit_identifiers_normalized_search_idx[\s\S]*normalized_value/);
     expect(migration).toMatch(/insert into public\.circuit_identifiers[\s\S]*from public\.circuits/);
     expect(migration).toMatch(/case when identifier_type = 'durable' then 'alternate'/);

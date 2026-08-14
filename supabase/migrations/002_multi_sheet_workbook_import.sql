@@ -132,15 +132,42 @@ begin
      and (select count(*) from public.circuit_identifiers where circuit_id = new_id and is_primary) <> 1 then
     raise exception 'Circuit must have exactly one primary identifier';
   end if;
+  if new_id is not null and exists (
+    select 1 from public.circuit_identifiers ci
+    join public.circuits c on c.id = ci.circuit_id
+    where ci.circuit_id = new_id and ci.is_primary
+      and (ci.original_value is distinct from c.external_circuit_id
+           or ci.normalized_value is distinct from c.normalized_circuit_id)
+  ) then
+    raise exception 'Primary identifier must match circuit compatibility values';
+  end if;
   if tg_op = 'UPDATE' and old.circuit_id is distinct from new.circuit_id
      and exists (select 1 from public.circuits where id = old_id)
      and (select count(*) from public.circuit_identifiers where circuit_id = old_id and is_primary) <> 1 then
     raise exception 'Circuit must have exactly one primary identifier';
   end if;
+  if tg_op = 'UPDATE' and old.circuit_id is distinct from new.circuit_id and exists (
+    select 1 from public.circuit_identifiers ci
+    join public.circuits c on c.id = ci.circuit_id
+    where ci.circuit_id = old_id and ci.is_primary
+      and (ci.original_value is distinct from c.external_circuit_id
+           or ci.normalized_value is distinct from c.normalized_circuit_id)
+  ) then
+    raise exception 'Primary identifier must match circuit compatibility values';
+  end if;
   if tg_op = 'DELETE'
      and exists (select 1 from public.circuits where id = old_id)
      and (select count(*) from public.circuit_identifiers where circuit_id = old_id and is_primary) <> 1 then
     raise exception 'Circuit must have exactly one primary identifier';
+  end if;
+  if tg_op = 'DELETE' and exists (
+    select 1 from public.circuit_identifiers ci
+    join public.circuits c on c.id = ci.circuit_id
+    where ci.circuit_id = old_id and ci.is_primary
+      and (ci.original_value is distinct from c.external_circuit_id
+           or ci.normalized_value is distinct from c.normalized_circuit_id)
+  ) then
+    raise exception 'Primary identifier must match circuit compatibility values';
   end if;
   return coalesce(new, old);
 end;
