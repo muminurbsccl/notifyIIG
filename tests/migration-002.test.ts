@@ -72,6 +72,14 @@ describe("multi-sheet workbook import migration", () => {
     expect(migration).toContain(`grant execute on function ${signature} to service_role`);
   });
 
+  it("provides authenticated database-local collision resolution", () => {
+    expect(migration).toContain("create or replace function public.find_import_collision_keys");
+    expect(migration).toContain("public.resolve_import_provider(item->>'providerCode', item->>'providerName')");
+    expect(migration).toContain("current_profile_role() not in ('admin', 'operations_editor')");
+    expect(migration).toContain("collision_keys := collision_keys || jsonb_build_array(item->>'candidateKey')");
+    expect(migration).toContain("grant execute on function public.find_import_collision_keys(jsonb) to authenticated");
+  });
+
   it("serializes checksum replays and returns the prior committed result", () => {
     expect(migration).toContain("import_batches_committed_checksum_idx");
     expect(migration).toContain("add column if not exists idempotency_checksum text");

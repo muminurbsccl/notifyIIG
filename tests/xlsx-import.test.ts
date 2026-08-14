@@ -106,4 +106,13 @@ describe("multi-sheet workbook orchestration", () => {
   it("rejects an invalid workbook payload", async () => {
     await expect(parseWorkbook(new File([new Uint8Array([1, 2, 3])], "invalid.xlsx"))).rejects.toMatchObject({ code: expect.stringMatching(/INVALID_WORKBOOK|EMPTY_WORKBOOK/) });
   });
+
+  it.each(["filename", "sheet name"])("rejects noncanonical %s before accessing the signing secret", async (kind) => {
+    delete process.env.APP_ENCRYPTION_KEY;
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([["Circuit ID", "Provider Name"], ["C-1", "Synthetic"]]), kind === "sheet name" ? " Upstream (IPT)" : "Upstream (IPT)");
+    const bytes = XLSX.write(workbook, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+    const filename = kind === "filename" ? " synthetic.xlsx" : "synthetic.xlsx";
+    await expect(parseWorkbook(new File([bytes], filename))).rejects.toMatchObject({ code: "NONCANONICAL_WORKBOOK_METADATA" });
+  });
 });

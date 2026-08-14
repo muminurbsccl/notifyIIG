@@ -215,6 +215,40 @@ create policy circuit_identifiers_write_scope on public.circuit_identifiers for 
   )
 );
 
+create or replace function public.find_import_collision_keys(p_candidates jsonb)
+returns jsonb
+language plpgsql
+security definer set search_path = public, pg_temp
+as $$
+declare
+  item jsonb;
+  target_provider_id uuid;
+  collision_keys jsonb := '[]'::jsonb;
+begin
+  if public.current_profile_role() is null or public.current_profile_role() not in ('admin', 'operations_editor') then
+    raise exception 'Import collision preview requires an administrator or operations editor';
+  end if;
+  if jsonb_typeof(p_candidates) <> 'array' or jsonb_array_length(p_candidates) > 5000 then
+    raise exception 'Import collision preview payload is invalid';
+  end if;
+  for item in select value from jsonb_array_elements(p_candidates) loop
+    target_provider_id := public.resolve_import_provider(item->>'providerCode', item->>'providerName');
+    if target_provider_id is not null and exists (
+      select 1 from public.circuits c
+      where c.provider_id = target_provider_id
+        and c.normalized_circuit_id = item->>'normalizedValue'
+        and c.status <> 'archived'
+    ) then
+      collision_keys := collision_keys || jsonb_build_array(item->>'candidateKey');
+    end if;
+  end loop;
+  return collision_keys;
+end;
+$$;
+
+revoke all on function public.find_import_collision_keys(jsonb) from public;
+grant execute on function public.find_import_collision_keys(jsonb) to authenticated;
+
 drop function if exists public.commit_import_batch(uuid, text, text, jsonb, jsonb, jsonb);
 create or replace function public.commit_import_batch(
   p_actor_user_id uuid,

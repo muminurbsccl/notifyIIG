@@ -95,6 +95,9 @@ export async function parseWorkbook(file: File, now = new Date()): Promise<Workb
   }
   const sheetNames = workbook.SheetNames;
   if (sheetNames.length === 0) throw new InputError("EMPTY_WORKBOOK", "Workbook contains no worksheets");
+  if (file.name !== file.name.trim() || sheetNames.some((sheetName) => sheetName !== sheetName.trim())) {
+    throw new InputError("NONCANONICAL_WORKBOOK_METADATA", "Workbook filename and sheet names cannot have surrounding whitespace", 422);
+  }
   const adapterResults: SheetAdapterResult[] = [];
   const orchestrationIssues: ImportIssue[] = [];
   const businessDate = dhakaBusinessDate(now);

@@ -74,30 +74,15 @@ export async function findExistingImportCandidateKeys(
   candidates: readonly { candidateKey: string; providerCode: string; providerName: string; identifiers: readonly { normalizedValue: string; primary: boolean }[] }[],
 ): Promise<Set<string>> {
   if (candidates.length === 0) return new Set();
-  const normalizedValues = [...new Set(candidates.flatMap((candidate) => candidate.identifiers.filter((identifier) => identifier.primary).map((identifier) => identifier.normalizedValue)))];
-  const { data: providers, error: providerError } = await supabase.from("providers").select("id,code,name");
-  if (providerError) throw providerError;
-  const providerByCode = new Map((providers ?? []).map((provider) => [String(provider.code), String(provider.id)]));
-  const providersByName = new Map<string, string[]>();
-  for (const provider of providers ?? []) {
-    const key = String(provider.name).toUpperCase(); const matches = providersByName.get(key) ?? []; matches.push(String(provider.id)); providersByName.set(key, matches);
-  }
-  const candidateProvider = new Map<string, string>();
-  for (const candidate of candidates) {
-    const exact = providerByCode.get(candidate.providerCode); const nameMatches = providersByName.get(candidate.providerName.toUpperCase()) ?? [];
-    const providerId = exact ?? (nameMatches.length === 1 ? nameMatches[0] : undefined);
-    if (providerId) candidateProvider.set(candidate.candidateKey, providerId);
-  }
-  const providerIds = [...new Set(candidateProvider.values())];
-  if (providerIds.length === 0 || normalizedValues.length === 0) return new Set();
-  const { data: circuits, error: circuitError } = await supabase.from("circuits").select("provider_id,normalized_circuit_id,status")
-    .in("provider_id", providerIds).in("normalized_circuit_id", normalizedValues).neq("status", "archived");
-  if (circuitError) throw circuitError;
-  const existingPairs = new Set((circuits ?? []).map((circuit) => `${String(circuit.provider_id)}:${String(circuit.normalized_circuit_id)}`));
-  return new Set(candidates.filter((candidate) => {
-    const providerId = candidateProvider.get(candidate.candidateKey); const primary = candidate.identifiers.find((identifier) => identifier.primary);
-    return Boolean(providerId && primary && existingPairs.has(`${providerId}:${primary.normalizedValue}`));
-  }).map((candidate) => candidate.candidateKey));
+  const payload = candidates.flatMap((candidate) => {
+    const primary = candidate.identifiers.find((identifier) => identifier.primary);
+    return primary ? [{ candidateKey: candidate.candidateKey, providerCode: candidate.providerCode, providerName: candidate.providerName, normalizedValue: primary.normalizedValue }] : [];
+  });
+  const { data, error } = await supabase.rpc("find_import_collision_keys", { p_candidates: payload });
+  if (error) throw error;
+  const candidateKeys = new Set(candidates.map((candidate) => candidate.candidateKey));
+  if (!Array.isArray(data) || data.some((key) => typeof key !== "string" || !candidateKeys.has(key))) throw new Error("Database returned an invalid collision lookup result");
+  return new Set(data);
 }
 
 export async function getCircuit(
