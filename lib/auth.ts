@@ -36,9 +36,13 @@ export type AuthContext = {
   supabase: Awaited<ReturnType<typeof createServerSupabaseClient>>;
 };
 
-export async function getAuthContext(): Promise<AuthContext | null> {
+type ServerSupabaseClient = Awaited<ReturnType<typeof createServerSupabaseClient>>;
+
+export async function getAuthContext(
+  initializedClient?: ServerSupabaseClient,
+): Promise<AuthContext | null> {
   if (!getPublicConfig().configured) return null;
-  const supabase = await createServerSupabaseClient();
+  const supabase = initializedClient ?? (await createServerSupabaseClient());
   const {
     data: { user },
     error: authError,
