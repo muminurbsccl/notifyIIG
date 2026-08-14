@@ -41,4 +41,13 @@ describe("Backhaul sheet adapter", () => {
       "MISSING_IDENTIFIER", "INVALID_DATE", "CONTRADICTORY_DATES", "COMPOUND_COST", "UNMAPPED_CELL",
     ]));
   });
+
+  it("rejects equal and reversed activation-expiry boundaries", () => {
+    const result = upstreamBackhaulAdapter.parse({ name: "Upstream (Backhaul)", rows: [header,
+      ["Synthetic Carrier"],
+      ["1", "PROVIDER-EQUAL", "INTERNAL-EQUAL", "10G", "Segment", "CORE", "1-Feb-31", "1-Feb-31"],
+      ["2", "PROVIDER-REVERSED", "INTERNAL-REVERSED", "10G", "Segment", "CORE", "2-Feb-31", "1-Feb-31"],
+    ] }, "2030-01-01");
+    expect(result.issues.filter((issue) => issue.code === "CONTRADICTORY_DATES").map((issue) => issue.source?.rowNumber)).toEqual([3, 4]);
+  });
 });

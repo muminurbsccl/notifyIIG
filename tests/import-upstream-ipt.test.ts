@@ -40,4 +40,12 @@ describe("IP Transit sheet adapter", () => {
     ]));
     expect(result.circuitCandidates[0].providerName).toBe("Explicit Carrier");
   });
+
+  it("rejects equal and reversed activation-expiry boundaries", () => {
+    const result = upstreamIptAdapter.parse({ name: "Upstream (IPT)", rows: [header,
+      ["1", "", "CIRCUIT-EQUAL", "IP Port", "10G", "Carrier", "", "", "1-Feb-31", "1-Feb-31"],
+      ["2", "", "CIRCUIT-REVERSED", "IP Port", "10G", "Carrier", "", "", "2-Feb-31", "1-Feb-31"],
+    ] }, "2030-01-01");
+    expect(result.issues.filter((issue) => issue.code === "CONTRADICTORY_DATES").map((issue) => issue.source?.rowNumber)).toEqual([2, 3]);
+  });
 });
