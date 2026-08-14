@@ -7,6 +7,9 @@ export function parseImportCost(input: unknown): ImportCost {
   if (/\bUSD\b/i.test(raw) || raw.includes("$")) currencies.add("USD");
   if (/\bSGD\b/i.test(raw)) currencies.add("SGD");
   const currency = currencies.size === 1 ? [...currencies][0] : null;
+  if (/[+-]\s*\d/.test(raw) || /\(\s*\d[\d,.]*\s*\)/.test(raw)) {
+    return { monthlyCost: null, currency, rawDetails: raw };
+  }
   const matches = raw.match(/[+-]?\(?\d[\d,.]*\)?/g) ?? [];
   if (matches.length !== 1 || currencies.size > 1) {
     return { monthlyCost: null, currency, rawDetails: raw };

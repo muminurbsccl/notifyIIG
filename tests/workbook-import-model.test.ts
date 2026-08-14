@@ -45,7 +45,10 @@ describe("workbook import model utilities", () => {
 
   it.each([
     "USD -5",
+    "USD - 5",
+    "USD + 5",
     "USD (5)",
+    "USD ( 5 )",
     "USD 1,2",
     "USD 1.005",
     "USD SGD 500",
