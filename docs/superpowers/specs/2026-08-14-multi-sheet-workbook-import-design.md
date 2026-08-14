@@ -104,7 +104,8 @@ workbook does not assert.
   burstable, bundled, or mixed-currency descriptions remain in raw cost details
   and are not reduced to misleading totals.
 - Complete future records are imported as `active`, verified by the importing
-  administrator, and notification-enabled.
+  administrator, notification-enabled, and assigned
+  `owner_override = "BSCPLC IIG Support"` until an individual owner is set.
 - Complete records already past expiry are imported as `expired` with
   notifications disabled.
 - Missing scheduler-critical dates produce `draft` records with notifications
@@ -149,8 +150,9 @@ Live commit is a separate operator-confirmation gate after preview approval.
   multiline values, blank internal IDs, narrative dates, two-table enrichment,
   continuation lines, compound costs, and helper-sheet exclusion.
 - Test canonical provider aliases, primary/alternate identifier search,
-  lifecycle classification, verification attribution, source lineage,
-  duplicate decisions, checksums, signatures, and transaction rollback.
+  lifecycle classification, default support ownership, verification
+  attribution, source lineage, duplicate decisions, checksums, signatures, and
+  transaction rollback.
 - Run typecheck, lint, the full test suite, production build, migration checks,
   and an authenticated production preview.
 - After explicit approval, commit and verify providers, records, states, dates,
