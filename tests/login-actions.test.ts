@@ -107,6 +107,22 @@ describe("server login actions", () => {
     );
   });
 
+  it("maps a non-credential provider HTTP 400 to service unavailable", async () => {
+    mocks.signInWithPassword.mockResolvedValue({
+      data: { user: null, session: null },
+      error: {
+        code: "unexpected_failure",
+        status: 400,
+        message: "token=provider-secret-detail",
+      },
+    });
+
+    await expectRedirect(
+      signInWithPassword(formData({ email: "person@example.com", password: "bad" })),
+      "/login?error=service-unavailable&method=password",
+    );
+  });
+
   it("authorizes the newly established session with the same client", async () => {
     mocks.signInWithPassword.mockResolvedValue({
       data: { user: { id: "user-1" }, session: { access_token: "hidden" } },
@@ -139,6 +155,22 @@ describe("server login actions", () => {
     );
 
     expect(mocks.signOut).toHaveBeenCalledOnce();
+  });
+
+  it("does not report unauthorized cleanup when sign-out returns an error", async () => {
+    mocks.signInWithPassword.mockResolvedValue({
+      data: { user: { id: "user-1" }, session: { access_token: "hidden" } },
+      error: null,
+    });
+    mocks.getAuthContext.mockResolvedValue(null);
+    mocks.signOut.mockResolvedValue({
+      error: { code: "cleanup_failed", message: "token=provider-secret-detail" },
+    });
+
+    await expectRedirect(
+      signInWithPassword(passwordFormData("correct")),
+      "/login?error=service-unavailable&method=password",
+    );
   });
 
   it("maps an authorization provider outage to a generic state", async () => {

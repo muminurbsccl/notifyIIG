@@ -17,8 +17,7 @@ function isInvalidInput(cause: unknown): boolean {
 
 function isInvalidCredentials(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
-  const candidate = error as { code?: string; status?: number };
-  return candidate.code === "invalid_credentials" || candidate.status === 400;
+  return (error as { code?: string }).code === "invalid_credentials";
 }
 
 export async function requestMagicLink(formData: FormData): Promise<void> {
@@ -62,8 +61,10 @@ export async function signInWithPassword(formData: FormData): Promise<void> {
       if (context) {
         destination = "/dashboard";
       } else {
-        await supabase.auth.signOut();
-        destination = "/login?error=not-authorized";
+        const { error: signOutError } = await supabase.auth.signOut();
+        destination = signOutError
+          ? "/login?error=service-unavailable&method=password"
+          : "/login?error=not-authorized";
       }
     }
   } catch (cause) {
