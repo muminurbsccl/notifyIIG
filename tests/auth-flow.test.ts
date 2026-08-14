@@ -31,6 +31,17 @@ describe("authentication flow policy", () => {
     it("uses the caller-provided fallback", () => {
       expect(safeInternalDestination("https://evil.example", "/login")).toBe("/login");
     });
+
+    it.each([
+      "https://evil.example",
+      "//evil.example",
+      "/\\evil.example",
+      "/%5C%5Cevil.example",
+      "/%E0%A4%A",
+      "/dashboard\u0000",
+    ])("uses the fixed safe default when the caller fallback is unsafe: %j", (fallback) => {
+      expect(safeInternalDestination(null, fallback)).toBe("/dashboard");
+    });
   });
 
   describe("validatedAppBaseUrl", () => {
@@ -52,6 +63,10 @@ describe("authentication flow policy", () => {
       "not a URL",
       "http://notifyiig.vercel.app",
       "ftp://notifyiig.vercel.app",
+      "https://evil.example",
+      "https://preview.notifyiig.vercel.app",
+      "https://notifyiig.vercel.app.evil.example",
+      "https://notifyiig.vercel.app:444",
       "https://user:password@notifyiig.vercel.app",
       "https://notifyiig.vercel.app/path",
       "https://notifyiig.vercel.app?query=1",
