@@ -15,6 +15,8 @@ describe("multi-sheet workbook import migration", () => {
     expect(migration).toMatch(/create unique index if not exists circuit_identifiers_unique_value_idx[\s\S]*\(circuit_id, normalized_value\)/);
     expect(migration).toMatch(/create unique index if not exists circuit_identifiers_one_primary_idx[\s\S]*where is_primary/);
     expect(migration).toContain("create constraint trigger circuit_identifiers_require_primary");
+    expect(migration).toContain("normalized_value = public.normalize_import_identifier(original_value)");
+    expect(migration).toContain("old.circuit_id is distinct from new.circuit_id");
     expect(migration).toMatch(/create index if not exists circuit_identifiers_normalized_search_idx[\s\S]*normalized_value/);
     expect(migration).toMatch(/insert into public\.circuit_identifiers[\s\S]*from public\.circuits/);
     expect(migration).toMatch(/case when identifier_type = 'durable' then 'alternate'/);
@@ -36,6 +38,9 @@ describe("multi-sheet workbook import migration", () => {
     expect(migration).toContain("Imported notification or ownership state does not match lifecycle");
     expect(migration).toContain("public.normalize_import_identifier");
     expect(migration).toContain("Imported identifier normalization is invalid");
+    expect(migration).toContain("external_circuit_id = imported_external_id");
+    expect(migration).toContain("identifier_type = item->>'identifierType'");
+    expect(migration).toContain("coalesce(imported_expiry_date, expiry_date) is distinct from expiry_date");
     expect(migration).toMatch(/values \(provider_item->>'code', provider_item->>'name', false\)/);
     expect(migration).not.toMatch(/update public\.providers[\s\S]{0,120}active = true/);
     for (const field of ["serviceType", "capacity", "location", "segment", "connectedRouter", "startDate", "expiryDate", "renewalProcedureStartDate", "monthlyCost", "currency", "rawCostDetails", "notes"]) {
@@ -66,6 +71,9 @@ describe("multi-sheet workbook import migration", () => {
 
   it("serializes checksum replays and returns the prior committed result", () => {
     expect(migration).toContain("import_batches_committed_checksum_idx");
+    expect(migration).toContain("add column if not exists idempotency_checksum text");
+    expect(migration).toMatch(/row_number\(\) over \(partition by checksum order by committed_at desc nulls last, created_at desc, id desc\)/);
+    expect(migration).toContain("idempotency_checksum = p_checksum");
     expect(migration).toMatch(/pg_catalog\.pg_advisory_xact_lock\(hashtextextended\('import:' \|\| p_checksum/);
     expect(migration).toContain("where checksum = p_checksum and status = 'committed'");
     expect(migration).toContain("return jsonb_build_object('batchId', prior_batch_id, 'counts', prior_counts)");

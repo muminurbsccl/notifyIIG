@@ -64,7 +64,10 @@ create table if not exists public.circuit_identifiers (
   circuit_id uuid not null references public.circuits(id) on delete cascade,
   identifier_kind text not null check (identifier_kind in ('circuit', 'link', 'bscplc', 'provider', 'customer_link', 'service_order', 'alternate')),
   original_value text not null check (length(btrim(original_value)) > 0),
-  normalized_value text not null check (length(btrim(normalized_value)) > 0),
+  normalized_value text not null check (
+    length(btrim(normalized_value)) > 0
+    and normalized_value = public.normalize_import_identifier(original_value)
+  ),
   is_primary boolean not null default false,
   created_at timestamptz not null default timezone('utc', now())
 );
@@ -119,10 +122,24 @@ returns trigger
 language plpgsql
 as $$
 declare
-  target_id uuid := coalesce(new.circuit_id, old.circuit_id);
+  old_id uuid;
+  new_id uuid;
 begin
-  if exists (select 1 from public.circuits where id = target_id)
-     and (select count(*) from public.circuit_identifiers where circuit_id = target_id and is_primary) <> 1 then
+  if tg_op in ('INSERT', 'UPDATE') then new_id := new.circuit_id; end if;
+  if tg_op in ('UPDATE', 'DELETE') then old_id := old.circuit_id; end if;
+  if new_id is not null
+     and exists (select 1 from public.circuits where id = new_id)
+     and (select count(*) from public.circuit_identifiers where circuit_id = new_id and is_primary) <> 1 then
+    raise exception 'Circuit must have exactly one primary identifier';
+  end if;
+  if tg_op = 'UPDATE' and old.circuit_id is distinct from new.circuit_id
+     and exists (select 1 from public.circuits where id = old_id)
+     and (select count(*) from public.circuit_identifiers where circuit_id = old_id and is_primary) <> 1 then
+    raise exception 'Circuit must have exactly one primary identifier';
+  end if;
+  if tg_op = 'DELETE'
+     and exists (select 1 from public.circuits where id = old_id)
+     and (select count(*) from public.circuit_identifiers where circuit_id = old_id and is_primary) <> 1 then
     raise exception 'Circuit must have exactly one primary identifier';
   end if;
   return coalesce(new, old);
@@ -134,8 +151,19 @@ create constraint trigger circuit_identifiers_require_primary
 after insert or update or delete on public.circuit_identifiers
 deferrable initially deferred for each row execute function public.require_circuit_primary_identifier();
 
+alter table public.import_batches add column if not exists idempotency_checksum text;
+with ranked_commits as (
+  select id, checksum,
+         row_number() over (partition by checksum order by committed_at desc nulls last, created_at desc, id desc) as replay_rank
+  from public.import_batches
+  where status = 'committed'
+)
+update public.import_batches ib
+set idempotency_checksum = ranked_commits.checksum
+from ranked_commits
+where ib.id = ranked_commits.id and ranked_commits.replay_rank = 1;
 create unique index if not exists import_batches_committed_checksum_idx
-  on public.import_batches (checksum) where status = 'committed';
+  on public.import_batches (idempotency_checksum) where idempotency_checksum is not null;
 
 alter table public.circuit_identifiers enable row level security;
 drop policy if exists circuit_identifiers_select_scope on public.circuit_identifiers;
@@ -330,14 +358,16 @@ begin
       elsif existing_id is not null and decision = 'merge' then
         target_circuit_id := existing_id;
         update public.circuits set
+          external_circuit_id = imported_external_id,
+          identifier_type = item->>'identifierType',
           service_type = coalesce(item->>'serviceType', service_type),
           capacity = coalesce(item->>'capacity', capacity),
           location = coalesce(item->>'location', location),
           segment = coalesce(item->>'segment', segment),
           connected_router = coalesce(item->>'connectedRouter', connected_router),
           start_date = coalesce(nullif(item->>'startDate', '')::date, start_date),
-          expiry_version = case when nullif(item->>'expiryDate', '')::date is distinct from expiry_date then expiry_version + 1 else expiry_version end,
-          expiry_date = coalesce(nullif(item->>'expiryDate', '')::date, expiry_date),
+          expiry_version = case when coalesce(imported_expiry_date, expiry_date) is distinct from expiry_date then expiry_version + 1 else expiry_version end,
+          expiry_date = coalesce(imported_expiry_date, expiry_date),
           renewal_procedure_start_date = coalesce(nullif(item->>'renewalProcedureStartDate', '')::date, renewal_procedure_start_date),
           monthly_cost = coalesce(nullif(item->>'monthlyCost', '')::numeric, monthly_cost),
           currency = coalesce(nullif(upper(item->>'currency'), ''), currency),
@@ -420,7 +450,9 @@ begin
       end loop;
     end loop;
 
-    update public.import_batches set status = 'committed', committed_at = timezone('utc', now()) where id = batch_id;
+    update public.import_batches
+    set status = 'committed', committed_at = timezone('utc', now()), idempotency_checksum = p_checksum
+    where id = batch_id;
     insert into public.audit_logs (actor_user_id, action, entity_type, entity_id, after_json)
     values (p_actor_user_id, 'import.commit', 'import_batch', batch_id, jsonb_build_object(
       'createdCircuits', created_circuits,
