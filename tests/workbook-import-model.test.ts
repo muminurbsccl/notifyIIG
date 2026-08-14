@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cellText, headerKey, isBlankRow, splitMultiline } from "@/lib/import/cell-values";
+import { cellText, createConsumedColumns, headerKey, isBlankRow, splitMultiline } from "@/lib/import/cell-values";
 import { parseImportCost } from "@/lib/import/costs";
 import { parseWorkbookDate } from "@/lib/import/dates";
 import { resolveCanonicalProvider } from "@/lib/domain/provider-aliases";
@@ -43,6 +43,25 @@ describe("workbook import model utilities", () => {
     });
   });
 
+  it.each([
+    "USD -5",
+    "USD (5)",
+    "USD 1,2",
+    "USD 1.005",
+    "USD SGD 500",
+    "USD 1,000,000,000,000.00",
+  ])("preserves unsafe or ambiguous cost %j", (raw) => {
+    expect(parseImportCost(raw)).toMatchObject({ monthlyCost: null, rawDetails: raw });
+  });
+
+  it("accepts the maximum supported decimal amount exactly", () => {
+    expect(parseImportCost("USD 999,999,999,999.99")).toEqual({
+      monthlyCost: 999999999999.99,
+      currency: "USD",
+      rawDetails: null,
+    });
+  });
+
   it("canonicalizes an explicit provider without retaining heading location", () => {
     expect(resolveCanonicalProvider("Example Carrier (Site A)", "Example Carrier")).toEqual({
       code: "EXAMPLE_CARRIER",
@@ -55,6 +74,14 @@ describe("workbook import model utilities", () => {
     expect(headerKey(" Circuit/Link_ID ")).toBe("circuit link id");
     expect(splitMultiline(" ID-A\r\n\r\n ID-B ")).toEqual(["ID-A", "ID-B"]);
     expect(isBlankRow(["", null, "  "])).toBe(true);
+  });
+
+  it("reports only deterministic nonblank unconsumed cells", () => {
+    const consumed = createConsumedColumns();
+    consumed.mark(0, 2);
+    expect(consumed.unconsumed(["mapped", " extra ", "mapped too", "", null])).toEqual([
+      { columnIndex: 1, value: "extra" },
+    ]);
   });
 
   it("classifies complete future, past, and incomplete records deterministically", () => {
