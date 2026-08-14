@@ -4,6 +4,7 @@ import * as XLSX from "xlsx";
 vi.mock("server-only", () => ({}));
 
 import { isPreviewFresh, parseWorkbook, verifyPreviewSignature } from "@/lib/import/xlsx";
+import { APPROVED_WORKBOOK_SHEET_NAMES, getWorkbookSheetAdapter } from "@/lib/import/adapters";
 
 function workbookFile(): File {
   const workbook = XLSX.utils.book_new();
@@ -70,9 +71,39 @@ describe("multi-sheet workbook orchestration", () => {
     expect(verify({ checksum: "0".repeat(64) })).toBe(false);
     expect(verify({ previewChecksum: "1".repeat(64) })).toBe(false);
     expect(verify({ previewIssuedAt: "2030-01-01T00:00:01.000Z" })).toBe(false);
-    expect(isPreviewFresh(preview.previewIssuedAt, new Date("2030-01-01T00:30:00.000Z"))).toBe(true);
-    expect(verify({}, new Date("2030-01-01T00:30:00.001Z"))).toBe(false);
+    expect(isPreviewFresh(preview.previewIssuedAt, new Date("2030-01-01T00:29:59.999Z"))).toBe(true);
+    expect(verify({}, new Date("2030-01-01T00:30:00.000Z"))).toBe(false);
     expect(isPreviewFresh("not-a-date", issued)).toBe(false);
+    expect(isPreviewFresh("2030-01-01", issued)).toBe(false);
+    expect(isPreviewFresh("2030-01-01T06:00:00.000+06:00", issued)).toBe(false);
+    expect(isPreviewFresh("2030-01-01T00:00:00Z", issued)).toBe(false);
+    expect(isPreviewFresh("2030-02-31T00:00:00.000Z", issued)).toBe(false);
     expect(isPreviewFresh("2030-01-01T00:00:01.000Z", issued)).toBe(false);
+  });
+
+  it("exposes an immutable exact approved-sheet allowlist", () => {
+    expect(APPROVED_WORKBOOK_SHEET_NAMES).toEqual(["Upstream (IPT)", "Upstream (Backhaul)", "Internet Exchange", "Singapore Equinix"]);
+    expect(Object.isFrozen(APPROVED_WORKBOOK_SHEET_NAMES)).toBe(true);
+    expect(() => (APPROVED_WORKBOOK_SHEET_NAMES as unknown as string[]).push("Unexpected")).toThrow();
+    expect(getWorkbookSheetAdapter("Unexpected")).toBeUndefined();
+    expect(APPROVED_WORKBOOK_SHEET_NAMES.every((name) => getWorkbookSheetAdapter(name)?.sheetName === name)).toBe(true);
+  });
+
+  it("rejects workbooks without an approved sheet but preserves approved structural errors", async () => {
+    const unsupported = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(unsupported, XLSX.utils.aoa_to_sheet([["helper"]]), "Sheet1");
+    XLSX.utils.book_append_sheet(unsupported, XLSX.utils.aoa_to_sheet([["unknown"]]), "Unknown");
+    const unsupportedBytes = XLSX.write(unsupported, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+    await expect(parseWorkbook(new File([unsupportedBytes], "unsupported.xlsx"))).rejects.toMatchObject({ code: "NO_APPROVED_WORKSHEETS", status: 422 });
+
+    const approvedEmpty = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(approvedEmpty, XLSX.utils.aoa_to_sheet([]), "Upstream (IPT)");
+    const approvedBytes = XLSX.write(approvedEmpty, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+    const preview = await parseWorkbook(new File([approvedBytes], "approved-empty.xlsx"), new Date("2030-01-01T00:00:00.000Z"));
+    expect(preview.issues).toContainEqual(expect.objectContaining({ code: "INVALID_SHEET_STRUCTURE", severity: "error" }));
+  });
+
+  it("rejects an invalid workbook payload", async () => {
+    await expect(parseWorkbook(new File([new Uint8Array([1, 2, 3])], "invalid.xlsx"))).rejects.toMatchObject({ code: expect.stringMatching(/INVALID_WORKBOOK|EMPTY_WORKBOOK/) });
   });
 });

@@ -3,7 +3,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import * as XLSX from "xlsx";
 import type { ImportIssue, ImportPreview } from "@/lib/domain/workbook-import";
 import { InputError } from "@/lib/http";
-import { WORKBOOK_SHEET_ADAPTERS } from "@/lib/import/adapters";
+import { getWorkbookSheetAdapter } from "@/lib/import/adapters";
 import type { SheetAdapterResult } from "@/lib/import/adapters/types";
 import { mergeAdapterResults } from "@/lib/import/merge-preview";
 import { getServerConfig } from "@/lib/server-config";
@@ -41,11 +41,13 @@ export function computePreviewSignature(previewChecksum: string, fileChecksum: s
 }
 
 export function isPreviewFresh(previewIssuedAt: string, now = new Date()): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(previewIssuedAt)) return false;
   const issuedAt = Date.parse(previewIssuedAt);
   const nowTime = now.getTime();
   if (!Number.isFinite(issuedAt) || !Number.isFinite(nowTime)) return false;
+  if (new Date(issuedAt).toISOString() !== previewIssuedAt) return false;
   const age = nowTime - issuedAt;
-  return age >= 0 && age <= PREVIEW_LIFETIME_MS;
+  return age >= 0 && age < PREVIEW_LIFETIME_MS;
 }
 
 export function verifyPreviewSignature(previewChecksum: string, fileChecksum: string, signature: string, filename: string, sheetNames: string[], previewIssuedAt = "", now = new Date()): boolean {
@@ -79,6 +81,12 @@ export async function parseWorkbook(file: File, now = new Date()): Promise<Workb
   }
 
   const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  const isXlsx = /\.xlsx$/i.test(file.name);
+  const validSignature = isXlsx
+    ? bytes.length >= 2 && bytes[0] === 0x50 && bytes[1] === 0x4b
+    : bytes.length >= 4 && bytes[0] === 0xd0 && bytes[1] === 0xcf && bytes[2] === 0x11 && bytes[3] === 0xe0;
+  if (!validSignature) throw new InputError("INVALID_WORKBOOK", "The workbook could not be parsed", 422);
   let workbook: XLSX.WorkBook;
   try {
     workbook = XLSX.read(buffer, { type: "array", cellFormula: false, cellNF: false, cellText: true, bookVBA: false });
@@ -90,6 +98,7 @@ export async function parseWorkbook(file: File, now = new Date()): Promise<Workb
   const adapterResults: SheetAdapterResult[] = [];
   const orchestrationIssues: ImportIssue[] = [];
   const businessDate = dhakaBusinessDate(now);
+  let approvedSheetCount = 0;
   for (const sheetName of sheetNames) {
     const sheet = workbook.Sheets[sheetName];
     if (!sheet) continue;
@@ -98,12 +107,13 @@ export async function parseWorkbook(file: File, now = new Date()): Promise<Workb
       orchestrationIssues.push({ code: "IGNORED_HELPER_SHEET", severity: "info", message: "Helper Sheet1 was ignored", source: { sheetName, rowNumber: 1 } });
       continue;
     }
-    const adapter = WORKBOOK_SHEET_ADAPTERS.get(sheetName);
-    if (adapter) { adapterResults.push(adapter.parse({ name: sheetName, rows }, businessDate)); continue; }
+    const adapter = getWorkbookSheetAdapter(sheetName);
+    if (adapter) { approvedSheetCount += 1; adapterResults.push(adapter.parse({ name: sheetName, rows }, businessDate)); continue; }
     if (rows.some((row) => row.some((cell) => String(cell ?? "").trim()))) {
       orchestrationIssues.push({ code: "UNKNOWN_WORKSHEET", severity: "warning", message: "Unknown non-empty worksheet requires review", source: { sheetName, rowNumber: 1 } });
     }
   }
+  if (approvedSheetCount === 0) throw new InputError("NO_APPROVED_WORKSHEETS", "Workbook contains no approved operational worksheets", 422);
   if (orchestrationIssues.length) adapterResults.push({ providers: [], circuitCandidates: [], issues: orchestrationIssues });
   const preview = mergeAdapterResults(adapterResults);
   const checksum = digest(buffer);
