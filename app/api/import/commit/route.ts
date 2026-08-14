@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireApiProfile } from "@/lib/auth";
 import { jsonError } from "@/lib/http";
-import { importCommitSchema } from "@/lib/validation";
+import { importCommitSchema, importCommitTransportSchema } from "@/lib/validation";
 import { computePreviewChecksum, verifyPreviewSignature } from "@/lib/import/xlsx";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
 
 const approvedCountKeys = ["createdCircuits", "skippedCircuits", "mergedCircuits", "versionedCircuits", "invoiceCount"] as const;
+const uuidPattern = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 
 function parseCommitCounts(value: unknown): Record<string, number> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -29,18 +30,19 @@ export async function POST(request: Request) {
     } catch {
       return NextResponse.json({ error: { code: "INVALID_JSON", message: "Request body must be valid JSON" } }, { status: 400 });
     }
-    const input = importCommitSchema.parse(payload);
-    if (input.preview.issues.some((issue) => issue.severity === "error")) {
-      return NextResponse.json({ error: { code: "IMPORT_PREVIEW_BLOCKED", message: "Resolve all blocking preview issues before commit" } }, { status: 422 });
-    }
+    const transport = importCommitTransportSchema.parse(payload);
     if (
-      computePreviewChecksum(input.preview) !== input.previewChecksum ||
-      !verifyPreviewSignature(input.previewChecksum, input.checksum, input.previewSignature, input.filename, input.sheetNames, input.previewIssuedAt)
+      computePreviewChecksum(transport.preview) !== transport.previewChecksum ||
+      !verifyPreviewSignature(transport.previewChecksum, transport.checksum, transport.previewSignature, transport.filename, transport.sheetNames, transport.previewIssuedAt)
     ) {
       return NextResponse.json(
         { error: { code: "PREVIEW_CHANGED", message: "The preview changed or expired; upload and review the workbook again" } },
         { status: 422 },
       );
+    }
+    const input = importCommitSchema.parse(payload);
+    if (input.preview.issues.some((issue) => issue.severity === "error")) {
+      return NextResponse.json({ error: { code: "IMPORT_PREVIEW_BLOCKED", message: "Resolve all blocking preview issues before commit" } }, { status: 422 });
     }
 
     const service = createServiceSupabaseClient();
@@ -55,6 +57,7 @@ export async function POST(request: Request) {
     if (error) throw error;
     const result = (data ?? {}) as Record<string, unknown>;
     if (result.status === "rejected") {
+      if (typeof result.batchId !== "string" || !uuidPattern.test(result.batchId)) throw new Error("Import commit returned an invalid rejection result");
       return NextResponse.json(
         {
           error: { code: "IMPORT_COMMIT_REJECTED", message: "The import was rejected; review the workbook and try again" },
@@ -64,10 +67,10 @@ export async function POST(request: Request) {
       );
     }
     const counts = parseCommitCounts(result.counts);
-    if (typeof result.batchId !== "string" || !counts) {
+    if (typeof result.batchId !== "string" || !uuidPattern.test(result.batchId) || !counts) {
       throw new Error("Import commit returned an invalid result");
     }
-    return NextResponse.json({ batchId: result.batchId, counts, issues: input.preview.issues });
+    return NextResponse.json({ batchId: result.batchId, counts });
   } catch (cause) {
     return jsonError(cause);
   }

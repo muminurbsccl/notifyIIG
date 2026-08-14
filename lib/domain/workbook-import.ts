@@ -18,7 +18,8 @@ export type ImportIssueCode =
   | "COMPOUND_COST"
   | "UNMAPPED_CELL"
   | "DUPLICATE_IDENTIFIER"
-  | "CONFLICTING_DUPLICATE";
+  | "CONFLICTING_DUPLICATE"
+  | "EXISTING_RECORD_COLLISION";
 
 export type ImportIssue = {
   code: ImportIssueCode;
@@ -73,6 +74,7 @@ export type ImportPreview = {
   issues: ImportIssue[];
   summary: {
     providerCount: number;
+    inputCandidateCount: number;
     serviceCount: number;
     activeCount: number;
     expiredCount: number;

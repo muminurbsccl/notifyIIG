@@ -285,6 +285,7 @@ begin
   insert into public.import_batches (filename, checksum, sheet_names, preview_summary, status, created_by)
   values (p_filename, p_checksum, p_sheet_names, jsonb_build_object(
     'providerCount', coalesce((p_preview #>> '{summary,providerCount}')::integer, 0),
+    'inputCandidateCount', coalesce((p_preview #>> '{summary,inputCandidateCount}')::integer, 0),
     'serviceCount', coalesce((p_preview #>> '{summary,serviceCount}')::integer, 0),
     'activeCount', coalesce((p_preview #>> '{summary,activeCount}')::integer, 0),
     'expiredCount', coalesce((p_preview #>> '{summary,expiredCount}')::integer, 0),

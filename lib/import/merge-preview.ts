@@ -35,6 +35,7 @@ function canonicalizeIdentifiers(identifiers: ImportIdentifier[], expectedPrimar
 }
 
 export function mergeAdapterResults(results: readonly SheetAdapterResult[]): ImportPreview {
+  const inputCandidateCount = results.reduce((count, result) => count + result.circuitCandidates.length, 0);
   const issues: ImportIssue[] = results.flatMap((result) => result.issues.map((issue) => ({ ...issue, source: issue.source ? { ...issue.source } : undefined })));
   const providerMap = new Map<string, ImportProvider>();
   for (const provider of results.flatMap((result) => result.providers).sort((a, b) => `${a.code}\u0000${a.name}\u0000${sourceKey(a.sources[0])}`.localeCompare(`${b.code}\u0000${b.name}\u0000${sourceKey(b.sources[0])}`))) {
@@ -81,7 +82,7 @@ export function mergeAdapterResults(results: readonly SheetAdapterResult[]): Imp
   return {
     providers, circuitCandidates, issues: sortedIssues,
     summary: {
-      providerCount: providers.length, serviceCount: circuitCandidates.length,
+      providerCount: providers.length, inputCandidateCount, serviceCount: circuitCandidates.length,
       activeCount: circuitCandidates.filter((candidate) => candidate.status === "active").length,
       expiredCount: circuitCandidates.filter((candidate) => candidate.status === "expired").length,
       draftCount: circuitCandidates.filter((candidate) => candidate.status === "draft").length, mergedCount,

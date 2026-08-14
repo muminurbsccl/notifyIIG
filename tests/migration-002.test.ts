@@ -58,6 +58,7 @@ describe("multi-sheet workbook import migration", () => {
     expect(migration).toContain("insert into public.source_lineage");
     expect(migration).not.toContain("p_preview->'summary'");
     expect(migration).toContain("'providerCount'");
+    expect(migration).toContain("'inputCandidateCount'");
     expect(migration).toContain("'serviceCount'");
     const auditInsert = migration.slice(migration.indexOf("insert into public.audit_logs"), migration.indexOf("return jsonb_build_object", migration.indexOf("insert into public.audit_logs")));
     expect(auditInsert).not.toContain("p_preview");

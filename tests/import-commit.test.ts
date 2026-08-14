@@ -29,7 +29,7 @@ function validPreview() {
       sources: [{ sheetName: "Upstream (IPT)", rowNumber: 2 }],
     }],
     issues: [],
-    summary: { providerCount: 1, serviceCount: 1, activeCount: 1, expiredCount: 0, draftCount: 0, mergedCount: 0 },
+    summary: { providerCount: 1, inputCandidateCount: 1, serviceCount: 1, activeCount: 1, expiredCount: 0, draftCount: 0, mergedCount: 0 },
   };
 }
 
@@ -67,6 +67,12 @@ describe("import commit service boundary", () => {
     ["late procedure", (preview: ReturnType<typeof validPreview>) => { preview.circuitCandidates[0].renewalProcedureStartDate = "2033-01-01"; }],
     ["invalid lifecycle ownership", (preview: ReturnType<typeof validPreview>) => { preview.circuitCandidates[0].notificationEnabled = false; }],
     ["inconsistent summary", (preview: ReturnType<typeof validPreview>) => { preview.summary.activeCount = 0; }],
+    ["understated merge count", (preview: ReturnType<typeof validPreview>) => { preview.summary.inputCandidateCount = 2; }],
+    ["overstated merge count", (preview: ReturnType<typeof validPreview>) => { preview.summary.mergedCount = 1; }],
+    ["undeclared provider", (preview: ReturnType<typeof validPreview>) => { preview.circuitCandidates[0].providerCode = "OTHER"; preview.circuitCandidates[0].candidateKey = "OTHER:CIRCUIT-1"; }],
+    ["provider name mismatch", (preview: ReturnType<typeof validPreview>) => { preview.circuitCandidates[0].providerName = "Other Name"; }],
+    ["source outside envelope", (preview: ReturnType<typeof validPreview>) => { preview.circuitCandidates[0].sources[0].sheetName = "Unknown"; }],
+    ["provider source outside envelope", (preview: ReturnType<typeof validPreview>) => { preview.providers[0].sources[0].sheetName = "Unknown"; }],
   ])("rejects %s before RPC", async (_name, mutate) => {
     const preview = validPreview(); mutate(preview); const response = await commitImport(request(preview));
     expect(response.status).toBe(400); expect(mocks.serviceRpc).not.toHaveBeenCalled();
@@ -78,6 +84,23 @@ describe("import commit service boundary", () => {
     const response = await commitImport(request(preview));
     expect(response.status).toBe(422); expect(await response.json()).toMatchObject({ error: { code: "IMPORT_PREVIEW_BLOCKED" } });
     expect(mocks.serviceRpc).not.toHaveBeenCalled();
+  });
+
+  it("rejects downgraded and misplaced issue decisions", async () => {
+    const downgraded = validPreview(); downgraded.issues.push({ code: "INVALID_DATE", severity: "warning", message: "Downgraded" } as never);
+    expect((await commitImport(request(downgraded))).status).toBe(400);
+    const unrelated = validPreview(); unrelated.issues.push({ code: "UNMAPPED_CELL", severity: "warning", message: "Extra", decisionKey: "EXAMPLE_PROVIDER:CIRCUIT-1" } as never);
+    expect((await commitImport(request(unrelated, { "EXAMPLE_PROVIDER:CIRCUIT-1": "skip" }))).status).toBe(400);
+    const actionable = validPreview(); actionable.issues.push({ code: "EXISTING_RECORD_COLLISION", severity: "warning", message: "Existing record" } as never);
+    expect((await commitImport(request(actionable))).status).toBe(400);
+    const outside = validPreview(); outside.issues.push({ code: "UNMAPPED_CELL", severity: "warning", message: "Extra", source: { sheetName: "Unknown", rowNumber: 1 } } as never);
+    expect((await commitImport(request(outside))).status).toBe(400);
+  });
+
+  it("accepts an actionable collision only with its canonical decision", async () => {
+    const preview = validPreview(); preview.issues.push({ code: "EXISTING_RECORD_COLLISION", severity: "warning", message: "Existing record", decisionKey: "EXAMPLE_PROVIDER:CIRCUIT-1" } as never);
+    const response = await commitImport(request(preview, { "EXAMPLE_PROVIDER:CIRCUIT-1": "merge" }));
+    expect(response.status).toBe(200); expect(mocks.serviceRpc).toHaveBeenCalled();
   });
 
   it("rejects unknown and missing canonical decision keys", async () => {
@@ -92,9 +115,17 @@ describe("import commit service boundary", () => {
     expect(response.status).toBe(422); expect(mocks.serviceRpc).not.toHaveBeenCalled();
   });
 
+  it("checks authenticity before trusting blocking issue state", async () => {
+    const preview = validPreview(); preview.issues.push({ code: "INVALID_DATE", severity: "error", message: "Tampered" } as never);
+    mocks.verifyPreviewSignature.mockReturnValue(false);
+    const response = await commitImport(request(preview));
+    expect(response.status).toBe(422); expect(await response.json()).toMatchObject({ error: { code: "PREVIEW_CHANGED" } });
+    expect(mocks.verifyPreviewSignature).toHaveBeenCalled(); expect(mocks.serviceRpc).not.toHaveBeenCalled();
+  });
+
   it("allowlists successful and rejected responses", async () => {
     mocks.serviceRpc.mockResolvedValueOnce({ data: { batchId: "00000000-0000-0000-0000-000000000002", counts: validCounts, secretLikeField: "hidden" }, error: null });
-    expect(await (await commitImport(request())).json()).toEqual({ batchId: "00000000-0000-0000-0000-000000000002", counts: validCounts, issues: [] });
+    expect(await (await commitImport(request())).json()).toEqual({ batchId: "00000000-0000-0000-0000-000000000002", counts: validCounts });
     mocks.serviceRpc.mockResolvedValueOnce({ data: { status: "rejected", batchId: "00000000-0000-0000-0000-000000000002", secretLikeField: "hidden" }, error: null });
     expect(await (await commitImport(request())).json()).toEqual({ error: { code: "IMPORT_COMMIT_REJECTED", message: "The import was rejected; review the workbook and try again" }, batchId: "00000000-0000-0000-0000-000000000002" });
   });
@@ -102,5 +133,11 @@ describe("import commit service boundary", () => {
   it("rejects malformed database count objects", async () => {
     mocks.serviceRpc.mockResolvedValue({ data: { batchId: "00000000-0000-0000-0000-000000000002", counts: { ...validCounts, nested: {} } }, error: null });
     expect((await commitImport(request())).status).toBe(500);
+  });
+
+  it("rejects a malformed rejected-batch identifier without reflecting it", async () => {
+    mocks.serviceRpc.mockResolvedValue({ data: { status: "rejected", batchId: { nested: "hidden" } }, error: null });
+    const response = await commitImport(request()); expect(response.status).toBe(500);
+    expect(JSON.stringify(await response.json())).not.toContain("hidden");
   });
 });

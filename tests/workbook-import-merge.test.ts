@@ -34,6 +34,7 @@ describe("workbook import merge", () => {
     expect(preview.circuitCandidates[0].identifiers).toHaveLength(2);
     expect(preview.circuitCandidates[0].sources.map((source) => source.rowNumber)).toEqual([2, 8]);
     expect(preview.summary).toMatchObject({ providerCount: 1, serviceCount: 1, activeCount: 1, mergedCount: 1 });
+    expect(preview.summary.inputCandidateCount - preview.summary.serviceCount).toBe(preview.summary.mergedCount);
   });
 
   it("emits a blocking issue for conflicting non-null duplicate values", () => {

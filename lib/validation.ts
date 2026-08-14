@@ -56,14 +56,6 @@ export const providerManagerCircuitPatchSchema = z.object({
 });
 
 export const importDecisionSchema = z.record(z.enum(["skip", "merge", "create"]));
-const importIssueCodeSchema = z.enum([
-  "IGNORED_HELPER_SHEET", "UNKNOWN_WORKSHEET", "INVALID_SHEET_STRUCTURE", "REPEATED_HEADER",
-  "MISSING_PROVIDER",
-  "MISSING_IDENTIFIER",
-  "INVALID_DATE", "CONTRADICTORY_DATES", "COMPOUND_COST", "UNMAPPED_CELL",
-  "DUPLICATE_IDENTIFIER", "CONFLICTING_DUPLICATE",
-]);
-
 const canonicalUtcTimestampSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/).refine((value) => {
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) && new Date(timestamp).toISOString() === value;
@@ -73,6 +65,16 @@ const importIdentifierSchema = z.object({
   kind: z.enum(["circuit", "link", "bscplc", "provider", "customer_link", "service_order", "alternate"]),
   value: z.string().trim().min(1).max(200), normalizedValue: z.string().min(1).max(200), primary: z.boolean(),
 }).strict();
+const issueShape = { message: z.string().min(1).max(1000), source: importSourceSchema.optional(), value: z.string().max(5000).optional() };
+const fixedIssue = <Code extends string, Severity extends "info" | "warning" | "error">(code: Code, severity: Severity) => z.object({ code: z.literal(code), severity: z.literal(severity), ...issueShape }).strict();
+const importIssueSchema = z.discriminatedUnion("code", [
+  fixedIssue("IGNORED_HELPER_SHEET", "info"),
+  fixedIssue("UNKNOWN_WORKSHEET", "warning"), fixedIssue("REPEATED_HEADER", "warning"), fixedIssue("COMPOUND_COST", "warning"),
+  fixedIssue("UNMAPPED_CELL", "warning"), fixedIssue("DUPLICATE_IDENTIFIER", "warning"),
+  fixedIssue("INVALID_SHEET_STRUCTURE", "error"), fixedIssue("MISSING_PROVIDER", "error"), fixedIssue("MISSING_IDENTIFIER", "error"),
+  fixedIssue("INVALID_DATE", "error"), fixedIssue("CONTRADICTORY_DATES", "error"), fixedIssue("CONFLICTING_DUPLICATE", "error"),
+  z.object({ code: z.literal("EXISTING_RECORD_COLLISION"), severity: z.literal("warning"), ...issueShape, decisionKey: z.string().min(3).max(300) }).strict(),
+]);
 const nullableText = (maximum: number) => z.string().max(maximum).nullable();
 const importCandidateSchema = z.object({
   candidateKey: z.string().min(3).max(300), providerCode: z.string().regex(/^[A-Z0-9]+(?:_[A-Z0-9]+)*$/).max(80), providerName: z.string().trim().min(1).max(160),
@@ -108,8 +110,8 @@ const importCandidateSchema = z.object({
 const importPreviewSchema = z.object({
   providers: z.array(z.object({ name: z.string().trim().min(1).max(160), code: z.string().regex(/^[A-Z0-9]+(?:_[A-Z0-9]+)*$/).max(80), sources: z.array(importSourceSchema).min(1).max(100) }).strict()).max(500),
   circuitCandidates: z.array(importCandidateSchema).max(5000),
-  issues: z.array(z.object({ code: importIssueCodeSchema, severity: z.enum(["info", "warning", "error"]), message: z.string().min(1).max(1000), source: importSourceSchema.optional(), value: z.string().max(5000).optional(), decisionKey: z.string().max(300).optional() }).strict()).max(10000),
-  summary: z.object({ providerCount: z.number().int().nonnegative(), serviceCount: z.number().int().nonnegative(), activeCount: z.number().int().nonnegative(), expiredCount: z.number().int().nonnegative(), draftCount: z.number().int().nonnegative(), mergedCount: z.number().int().nonnegative() }).strict(),
+  issues: z.array(importIssueSchema).max(10000),
+  summary: z.object({ providerCount: z.number().int().nonnegative(), inputCandidateCount: z.number().int().nonnegative(), serviceCount: z.number().int().nonnegative(), activeCount: z.number().int().nonnegative(), expiredCount: z.number().int().nonnegative(), draftCount: z.number().int().nonnegative(), mergedCount: z.number().int().nonnegative() }).strict(),
 }).strict().superRefine((preview, context) => {
   const expected = {
     providerCount: preview.providers.length, serviceCount: preview.circuitCandidates.length,
@@ -118,23 +120,35 @@ const importPreviewSchema = z.object({
     draftCount: preview.circuitCandidates.filter((candidate) => candidate.status === "draft").length,
   };
   for (const [key, value] of Object.entries(expected)) if (preview.summary[key as keyof typeof expected] !== value) context.addIssue({ code: z.ZodIssueCode.custom, path: ["summary", key], message: "Summary does not match preview records" });
+  if (preview.summary.inputCandidateCount < preview.summary.serviceCount || preview.summary.inputCandidateCount - preview.summary.serviceCount !== preview.summary.mergedCount) context.addIssue({ code: z.ZodIssueCode.custom, path: ["summary", "mergedCount"], message: "Merge counts do not match input provenance" });
   if (new Set(preview.providers.map((provider) => provider.code)).size !== preview.providers.length) context.addIssue({ code: z.ZodIssueCode.custom, path: ["providers"], message: "Provider codes must be unique" });
   if (new Set(preview.circuitCandidates.map((candidate) => candidate.candidateKey)).size !== preview.circuitCandidates.length) context.addIssue({ code: z.ZodIssueCode.custom, path: ["circuitCandidates"], message: "Candidate keys must be unique" });
+  const providers = new Map(preview.providers.map((provider) => [provider.code, provider.name]));
+  for (const [index, candidate] of preview.circuitCandidates.entries()) if (providers.get(candidate.providerCode) !== candidate.providerName) context.addIssue({ code: z.ZodIssueCode.custom, path: ["circuitCandidates", index, "providerCode"], message: "Candidate provider must match the provider list" });
 });
 
-export const importCommitSchema = z.object({
+const importTransportFields = {
   filename: z.string().trim().min(1).max(255),
   checksum: z.string().regex(/^[a-f0-9]{64}$/),
   previewChecksum: z.string().regex(/^[a-f0-9]{64}$/),
   previewSignature: z.string().regex(/^[a-f0-9]{64}$/),
   previewIssuedAt: canonicalUtcTimestampSchema,
   sheetNames: z.array(z.string().trim().min(1).max(120)).min(1).max(50).refine((names) => new Set(names).size === names.length, "Sheet names must be unique"),
+};
+export const importCommitTransportSchema = z.object({ ...importTransportFields, preview: z.unknown().refine((value) => value !== undefined), decisions: z.record(z.unknown()).default({}) }).strict();
+export const importCommitSchema = z.object({
+  ...importTransportFields,
   preview: importPreviewSchema,
   decisions: importDecisionSchema.default({}),
 }).strict().superRefine((input, context) => {
   const candidateKeys = new Set(input.preview.circuitCandidates.map((candidate) => candidate.candidateKey));
   for (const key of Object.keys(input.decisions)) if (!candidateKeys.has(key)) context.addIssue({ code: z.ZodIssueCode.custom, path: ["decisions", key], message: "Decision key does not match a candidate" });
-  for (const [index, issue] of input.preview.issues.entries()) if (issue.decisionKey && (!candidateKeys.has(issue.decisionKey) || !input.decisions[issue.decisionKey])) context.addIssue({ code: z.ZodIssueCode.custom, path: ["preview", "issues", index, "decisionKey"], message: "Issue requires a canonical reviewed decision" });
+  for (const [index, issue] of input.preview.issues.entries()) if (issue.code === "EXISTING_RECORD_COLLISION" && (!candidateKeys.has(issue.decisionKey) || !input.decisions[issue.decisionKey])) context.addIssue({ code: z.ZodIssueCode.custom, path: ["preview", "issues", index, "decisionKey"], message: "Issue requires a canonical reviewed decision" });
+  const sheetNames = new Set(input.sheetNames);
+  const checkSource = (source: { sheetName: string }, path: (string | number)[]) => { if (!sheetNames.has(source.sheetName)) context.addIssue({ code: z.ZodIssueCode.custom, path, message: "Source sheet must occur in the signed workbook sheet list" }); };
+  input.preview.providers.forEach((provider, providerIndex) => provider.sources.forEach((source, sourceIndex) => checkSource(source, ["preview", "providers", providerIndex, "sources", sourceIndex])));
+  input.preview.circuitCandidates.forEach((candidate, candidateIndex) => candidate.sources.forEach((source, sourceIndex) => checkSource(source, ["preview", "circuitCandidates", candidateIndex, "sources", sourceIndex])));
+  input.preview.issues.forEach((issue, issueIndex) => { if (issue.source) checkSource(issue.source, ["preview", "issues", issueIndex, "source"]); });
 });
 
 export const resendSchema = z.object({ reason: z.string().trim().min(5).max(1000) });

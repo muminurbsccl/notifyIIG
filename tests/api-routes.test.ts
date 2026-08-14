@@ -76,13 +76,20 @@ describe("authenticated API contracts", () => {
   it("allowlists the workbook preview response", async () => {
     const normalized = {
       filename: "synthetic.xlsx", checksum: "a".repeat(64), previewChecksum: "b".repeat(64), previewSignature: "c".repeat(64),
-      previewIssuedAt: "2030-01-01T00:00:00.000Z", sheetNames: ["Upstream (IPT)"], providers: [], circuitCandidates: [], issues: [],
-      summary: { providerCount: 0, serviceCount: 0, activeCount: 0, expiredCount: 0, draftCount: 0, mergedCount: 0 }, secretLikeField: "hidden",
+      previewIssuedAt: "2030-01-01T00:00:00.000Z", sheetNames: ["Upstream (IPT)"],
+      providers: [{ name: "Synthetic", code: "SYNTHETIC", sources: [{ sheetName: "Upstream (IPT)", rowNumber: 2, rawRow: "hidden" }], rawRow: "hidden" }],
+      circuitCandidates: [{ candidateKey: "SYNTHETIC:C-1", providerCode: "SYNTHETIC", providerName: "Synthetic", externalCircuitId: "C-1", identifierType: "circuit",
+        identifiers: [{ kind: "circuit", value: "C-1", normalizedValue: "C-1", primary: true, rawRow: "hidden" }], serviceType: null, capacity: null, location: null,
+        segment: null, connectedRouter: null, startDate: null, expiryDate: null, renewalProcedureStartDate: null, monthlyCost: null, currency: null,
+        rawCostDetails: null, notes: null, status: "draft", notificationEnabled: false, ownerOverride: null,
+        sources: [{ sheetName: "Upstream (IPT)", rowNumber: 2, rawRow: "hidden" }], rawRow: "hidden" }],
+      issues: [{ code: "UNMAPPED_CELL", severity: "warning", message: "Synthetic", source: { sheetName: "Upstream (IPT)", rowNumber: 2, rawRow: "hidden" }, rawRow: "hidden" }],
+      summary: { providerCount: 1, inputCandidateCount: 1, serviceCount: 1, activeCount: 0, expiredCount: 0, draftCount: 1, mergedCount: 0, rawRow: "hidden" }, secretLikeField: "hidden",
     };
     mocks.parseWorkbook.mockResolvedValue(normalized);
     const form = new FormData(); form.set("file", new File([new Uint8Array([1])], "synthetic.xlsx"));
     const response = await previewImport(new Request("http://localhost/api/import/preview", { method: "POST", body: form }));
-    const { secretLikeField: _secret, ...allowed } = normalized;
-    expect(await response.json()).toEqual({ preview: allowed });
+    const body = await response.json(); expect(JSON.stringify(body)).not.toContain("hidden");
+    expect(body.preview.summary).toMatchObject({ providerCount: 1, inputCandidateCount: 1, mergedCount: 0 });
   });
 });
