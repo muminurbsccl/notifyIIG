@@ -65,6 +65,8 @@ describe("cron route authorization", () => {
       ok: true,
       businessDate: "2026-09-01",
       counts: { circuitsProcessed: 1, eventsUpserted: 1, deliveriesCreated: 1, deliveriesClaimed: 1, sent: 1, retryScheduled: 0, permanentFailures: 0 },
+      targetCiphertext: "this must not be returned",
+      maskedTarget: "should-not-return",
     });
 
     const response = await cronHandler(
@@ -79,6 +81,17 @@ describe("cron route authorization", () => {
       counts: { circuitsProcessed: 1, eventsUpserted: 1, deliveriesCreated: 1, deliveriesClaimed: 1, sent: 1, retryScheduled: 0, permanentFailures: 0 },
     });
     expect(mocks.runExpiryNotificationJob).toHaveBeenCalledOnce();
+    expect(mocks.writeAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorUserId: null,
+        action: "notification.expiry.cron.run",
+        entityType: "notification_job",
+        after: {
+          businessDate: "2026-09-01",
+          counts: { circuitsProcessed: 1, eventsUpserted: 1, deliveriesCreated: 1, deliveriesClaimed: 1, sent: 1, retryScheduled: 0, permanentFailures: 0 },
+        },
+      }),
+    );
   });
 
   it("redacts job failures into a safe 500", async () => {
@@ -101,6 +114,7 @@ describe("cron route authorization", () => {
 
 describe("notification resend route", () => {
   const deliveryId = "00000000-0000-0000-0000-0000000000f1";
+  let insertedDelivery: Record<string, unknown> | null = null;
   const existingDelivery = {
     id: deliveryId,
     event_id: "00000000-0000-0000-0000-0000000000d1",
@@ -108,12 +122,14 @@ describe("notification resend route", () => {
     target_hash: "ab".repeat(32),
     masked_target: "o***@bscplc.test",
     target_ciphertext: "placeholder",
+    idempotency_key: "idempo-test-1",
     status: "sent",
   };
 
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("APP_ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef");
+    insertedDelivery = null;
     mocks.requireApiProfile.mockResolvedValue({
       user: { id: actorId },
       profile: { role: "admin" },
@@ -129,12 +145,15 @@ describe("notification resend route", () => {
           then: (resolve: (value: { data: typeof data[number] | null; error: null }) => void) =>
             resolve({ data: data[0] ?? null, error: null }),
         });
-        chain.upsert = (row: Record<string, unknown>) => ({
-          select: () => ({
-            then: (resolve: (value: { data: Record<string, unknown>[]; error: null }) => void) =>
-              resolve({ data: [{ ...row, id: "00000000-0000-0000-0000-0000000000f2" }], error: null }),
-          }),
-        });
+        chain.upsert = (row: Record<string, unknown>) => {
+          insertedDelivery = row;
+          return {
+            select: () => ({
+              then: (resolve: (value: { data: Record<string, unknown>[]; error: null }) => void) =>
+                resolve({ data: [{ ...row, id: "00000000-0000-0000-0000-0000000000f2" }], error: null }),
+            }),
+          };
+        };
         return chain;
       },
     });
@@ -168,7 +187,7 @@ describe("notification resend route", () => {
     expect(response.status).toBe(400);
   });
 
-  it("creates a distinct queued delivery with a resend-suffixed key and audits it", async () => {
+  it("copies identity fields for the resend delivery and audits the same operation", async () => {
     const response = await resendHandler(
       new Request("http://localhost/api/notifications/1/resend", {
         method: "POST",
@@ -182,8 +201,27 @@ describe("notification resend route", () => {
     const body = await response.json();
     expect(body.ok).toBe(true);
     expect(body.deliveryId).toBeTruthy();
+    expect(insertedDelivery).toMatchObject({
+      event_id: existingDelivery.event_id,
+      channel: existingDelivery.channel,
+      target_hash: existingDelivery.target_hash,
+      target_ciphertext: existingDelivery.target_ciphertext,
+      masked_target: existingDelivery.masked_target,
+      status: "queued",
+    });
+    expect(String(insertedDelivery?.idempotency_key)).toMatch(/-resend-[0-9a-f-]{36}$/i);
     expect(mocks.writeAudit).toHaveBeenCalledWith(
-      expect.objectContaining({ actorUserId: actorId, action: "notification.resend", entityType: "notification_delivery" }),
+      expect.objectContaining({
+        actorUserId: actorId,
+        action: "notification.resend",
+        entityType: "notification_delivery",
+        entityId: deliveryId,
+        after: expect.objectContaining({
+          reason: "operator follow-up",
+          channel: existingDelivery.channel,
+          maskedTarget: existingDelivery.masked_target,
+        }),
+      }),
     );
   });
 });

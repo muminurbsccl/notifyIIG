@@ -41,7 +41,7 @@ export async function POST(
     const client = createServiceSupabaseClient();
     const { data: delivery, error } = await client
       .from("notification_deliveries")
-      .select("id,event_id,channel,target_hash,masked_target,idempotency_key")
+      .select("id,event_id,channel,target_hash,target_ciphertext,masked_target,idempotency_key")
       .eq("id", id)
       .maybeSingle();
     if (error) throw error;
@@ -52,13 +52,14 @@ export async function POST(
     const { data: inserted, error: upsertError } = await client
       .from("notification_deliveries")
       .upsert(
-        {
-          event_id: delivery.event_id,
-          channel: delivery.channel,
-          target_hash: delivery.target_hash,
-          masked_target: delivery.masked_target,
-          idempotency_key: `${delivery.idempotency_key}-resend-${randomUUID()}`,
-          status: "queued",
+          {
+            event_id: delivery.event_id,
+            channel: delivery.channel,
+            target_hash: delivery.target_hash,
+            target_ciphertext: delivery.target_ciphertext,
+            masked_target: delivery.masked_target,
+            idempotency_key: `${delivery.idempotency_key}-resend-${randomUUID()}`,
+            status: "queued",
           attempts: 0,
           next_attempt_at: null,
         },
