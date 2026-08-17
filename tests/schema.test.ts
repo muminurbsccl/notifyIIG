@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { redactAuditValue } from "@/lib/domain/audit-redaction";
 
 const migration = readFileSync("supabase/migrations/001_initial.sql", "utf8");
+const migration003 = readFileSync("supabase/migrations/003_notification_production_completion.sql", "utf8");
 const seed = readFileSync("supabase/seed.sql", "utf8");
 
 describe("Supabase security and deployment artifacts", () => {
@@ -77,6 +78,16 @@ describe("Supabase security and deployment artifacts", () => {
     expect(seed).toContain("('DE-CIX', 'DE-CIX'");
     expect(seed).toContain("'global-default'");
     expect(seed).not.toMatch(/expiry_date|phone_e164|email_to|webhook/i);
+  });
+
+  it("includes production completion schedule and claim primitives", () => {
+    expect(migration003).toContain("create table if not exists public.notification_milestone_states");
+    expect(migration003).toContain("alter table public.notification_events\n  add column if not exists is_catch_up boolean not null default false;");
+    expect(migration003).toContain("create or replace function public.ensure_due_notification_events(");
+    expect(migration003).toContain("create or replace function public.claim_notification_deliveries(");
+    expect(migration003).toContain("for update skip locked");
+    expect(migration003).toContain("grant execute on function public.ensure_due_notification_events(");
+    expect(migration003).toContain("grant execute on function public.claim_notification_deliveries(integer) to service_role;");
   });
 
   it("redacts nested audit secret names, including generic key variants", () => {
