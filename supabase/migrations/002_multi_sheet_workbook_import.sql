@@ -396,7 +396,7 @@ begin
         raise exception 'Imported lifecycle does not match database-derived lifecycle';
       end if;
       if coalesce((item->>'notificationEnabled')::boolean, false) is distinct from (computed_status = 'active')
-         or item->>'ownerOverride' is distinct from case when computed_status = 'active' then 'BSCPLC IIG Support' else null end then
+         or item->>'ownerOverride' is distinct from (case when computed_status = 'active' then 'BSCPLC IIG Support' else null end) then
         raise exception 'Imported notification or ownership state does not match lifecycle';
       end if;
       import_status := computed_status;
