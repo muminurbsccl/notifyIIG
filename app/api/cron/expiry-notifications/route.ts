@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { runExpiryNotificationJob } from "@/lib/notifications/engine";
 import { getServerConfig } from "@/lib/server-config";
+import { writeAudit } from "@/lib/audit";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -19,7 +20,20 @@ export async function GET(request: Request) {
     );
   }
   try {
-    return NextResponse.json(await runExpiryNotificationJob());
+    const summary = await runExpiryNotificationJob();
+    const safeSummary = {
+      businessDate: summary.businessDate,
+      counts: summary.counts,
+    };
+
+    await writeAudit({
+      actorUserId: null,
+      action: "notification.expiry.cron.run",
+      entityType: "notification_job",
+      after: safeSummary,
+    });
+
+    return NextResponse.json({ ok: true, ...safeSummary });
   } catch {
     return NextResponse.json(
       { ok: false, error: { code: "CRON_JOB_FAILED", message: "The notification job failed" } },

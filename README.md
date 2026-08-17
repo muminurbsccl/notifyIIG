@@ -130,6 +130,21 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))" # AP
    idempotent per `(circuit_id, expiry_version, milestone_key)` and per
    delivery `idempotency_key`.
 
+4. Every successful cron call writes a redacted audit record with
+   `action: notification.expiry.cron.run`, `actorUserId: null`, and
+   `after: { businessDate, counts }` so no recipients/ciphertexts are ever
+   surfaced.
+
+5. Concurrency hardening validation (local test DB only):
+
+   ```powershell
+   $env:ALLOW_NOTIFICATION_CLAIM_TEST = "true"
+   node --env-file=.env.local scripts/verify-notification-claims.mjs
+   ```
+
+   Expected: `PASS: concurrent claims were disjoint`. Never run this script
+   against production or non-test hosts.
+
 ## 6. Configure channels after organizational approval
 
 Use `docs/channel-setup.md` for the dry-run-first provider contact and routing
@@ -167,6 +182,9 @@ database writes additionally require `--apply` and typed project confirmation.
    read-only **Audit log** after a cron run.
 4. **Approval:** sign off the hosting plan (see the warning above) and record
    the approved review in the deployment notes.
+5. **Claims test:** run `node --env-file=.env.local scripts/verify-notification-claims.mjs`
+   with `ALLOW_NOTIFICATION_CLAIM_TEST=true` only on localhost or a `_test`
+   database, then confirm expected event/delivery counts before first live send.
 
 ---
 
