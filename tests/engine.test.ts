@@ -54,8 +54,13 @@ describe("notification engine", () => {
   it("creates due events and idempotent deliveries, claims and dispatches them", async () => {
     const { client, tables } = makeFakeClient(baseState());
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ messageId: "email-1" }), { status: 200, headers: { "content-type": "application/json" } }),
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ messageId: "email-1" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
     );
     try {
       const summary = await runExpiryNotificationJob(now, client as never);
@@ -65,9 +70,9 @@ describe("notification engine", () => {
       expect(summary.counts).toMatchObject({
         circuitsProcessed: 1,
         eventsUpserted: 1,
-        deliveriesCreated: 1,
-        deliveriesClaimed: 1,
-        sent: 1,
+        deliveriesCreated: 2,
+        deliveriesClaimed: 2,
+        sent: 2,
         retryScheduled: 0,
         permanentFailures: 0,
       });
@@ -77,8 +82,15 @@ describe("notification engine", () => {
       expect(events[0]).toMatchObject({ circuit_id: circuitId, expiry_version: 1, milestone_key: "T-4M", due_date: "2026-08-31" });
 
       const deliveries = tables.notification_deliveries;
-      expect(deliveries).toHaveLength(1);
+      expect(deliveries).toHaveLength(2);
       expect(deliveries[0]).toMatchObject({
+        channel: "email",
+        status: "sent",
+        attempts: 1,
+        external_message_id: "email-1",
+        masked_target: "s***@bsccl.com",
+      });
+      expect(deliveries[1]).toMatchObject({
         channel: "email",
         status: "sent",
         attempts: 1,
@@ -96,8 +108,13 @@ describe("notification engine", () => {
   it("creates nothing new when the same run repeats", async () => {
     const { client, tables } = makeFakeClient(baseState());
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ messageId: "email-1" }), { status: 200, headers: { "content-type": "application/json" } }),
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ messageId: "email-1" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
     );
     try {
       await runExpiryNotificationJob(now, client as never);
@@ -113,21 +130,56 @@ describe("notification engine", () => {
     }
   });
 
-  it("schedules retries for transient failures and keeps the event open", async () => {
-    const { client, tables } = makeFakeClient(baseState());
+  it("uses first milestone override from renewal procedure start date", async () => {
+    const state = baseState();
+    state.circuits[0].renewal_procedure_start_date = "2026-07-15";
+    const { client, tables } = makeFakeClient(state);
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ error: "rate limited" }), { status: 429, headers: { "content-type": "application/json" } }),
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ messageId: "email-1" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
     );
     try {
       const summary = await runExpiryNotificationJob(now, client as never);
 
-      expect(summary.counts.retryScheduled).toBe(1);
+      expect(summary.ok).toBe(true);
+      expect(summary.counts.eventsUpserted).toBe(1);
+
+      expect(tables.notification_events).toHaveLength(1);
+      expect(tables.notification_events[0]).toMatchObject({
+        milestone_key: "T-4M",
+        due_date: "2026-07-15",
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("schedules retries for transient failures and keeps the event open", async () => {
+    const { client, tables } = makeFakeClient(baseState());
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ error: "rate limited" }), {
+          status: 429,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+    try {
+      const summary = await runExpiryNotificationJob(now, client as never);
+
+      expect(summary.counts.retryScheduled).toBe(2);
       expect(summary.counts.sent).toBe(0);
-      const delivery = tables.notification_deliveries[0];
-      expect(delivery.status).toBe("retry_scheduled");
-      expect(delivery.attempts).toBe(1);
-      expect(String(delivery.next_attempt_at) > now.toISOString()).toBe(true);
+      for (const delivery of tables.notification_deliveries) {
+        expect(delivery.status).toBe("retry_scheduled");
+        expect(delivery.attempts).toBe(1);
+        expect(String(delivery.next_attempt_at) > now.toISOString()).toBe(true);
+      }
       expect(tables.notification_events[0].status).toBe("pending");
     } finally {
       globalThis.fetch = originalFetch;
@@ -136,6 +188,16 @@ describe("notification engine", () => {
 
   it("does not claim future retry attempts", async () => {
     const state = baseState();
+    state.notification_milestone_states = [
+      {
+        circuit_id: circuitId,
+        expiry_version: 1,
+        milestone_key: "T-4M",
+        due_date: "2026-08-31",
+        state: "event_created",
+        event_id: eventId,
+      },
+    ];
     state.notification_events = [
       { id: eventId, circuit_id: circuitId, expiry_version: 1, milestone_key: "T-4M", due_date: "2026-08-31", status: "pending" },
     ];
@@ -153,8 +215,21 @@ describe("notification engine", () => {
       },
     ];
     const { client } = makeFakeClient(state);
-    const summary = await runExpiryNotificationJob(now, client as never);
-    expect(summary.counts.deliveriesClaimed).toBe(0);
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ messageId: "email-1" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+    try {
+      const summary = await runExpiryNotificationJob(now, client as never);
+      expect(summary.counts.deliveriesClaimed).toBe(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it("honors disabled channels and whatsapp opt-in requirements", async () => {
@@ -185,9 +260,26 @@ describe("notification engine", () => {
       },
     ];
     const { client, tables } = makeFakeClient(state);
-    const summary = await runExpiryNotificationJob(now, client as never);
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ messageId: "email-1" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+    try {
+      const summary = await runExpiryNotificationJob(now, client as never);
 
-    expect(summary.counts.deliveriesCreated).toBe(0);
-    expect(tables.notification_deliveries).toHaveLength(0);
+      expect(summary.counts.deliveriesCreated).toBe(1);
+      expect(tables.notification_deliveries).toHaveLength(1);
+      expect(tables.notification_deliveries[0]).toMatchObject({
+        channel: "email",
+        masked_target: "s***@bsccl.com",
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

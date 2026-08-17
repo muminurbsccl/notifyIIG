@@ -9,13 +9,21 @@ type Filter =
   | { kind: "eq" | "match" | "in" | "not" | "lte" | "lt"; column: string; value: unknown }
   | { kind: "or"; column: string; value: { kind: string; column: string; value: unknown }[] };
 
-type QueryOutcome = { data: Row | Row[] | null; error: null };
+type QueryOutcome = { data: unknown; error: null };
 
 export type FakeClient = {
   from(table: string): Chain;
+  rpc(functionName: string, args: Record<string, unknown>): RpcChain;
   _tables: Record<string, Row[]>;
   _upsertedEvents: string[];
   _upsertedDeliveries: string[];
+};
+
+type RpcChain = {
+  then(
+    onfulfilled?: (value: QueryOutcome) => QueryOutcome | PromiseLike<QueryOutcome>,
+    onrejected?: (reason: unknown) => QueryOutcome | PromiseLike<QueryOutcome>,
+  ): Promise<QueryOutcome | QueryOutcome>;
 };
 
 type Chain = {
@@ -171,8 +179,187 @@ export function makeFakeClient(initial: Record<string, Row[]>) {
     return { chain, run };
   }
 
-  const client = {
-    from: (table: string) => {
+  function normalizeDate(value: unknown): string {
+    if (value === null || value === undefined) return "";
+    return String(value);
+  }
+
+  function callEnsureDueNotificationEvents(args: Record<string, unknown>) {
+    const circuitId = String(args.p_circuit_id);
+    const expiryVersion = Number(args.p_expiry_version);
+    const ruleId = args.p_rule_id !== undefined && args.p_rule_id !== null ? String(args.p_rule_id) : null;
+    const milestones = Array.isArray(args.p_milestones) ? args.p_milestones : [];
+
+    const candidateMilestones = milestones
+      .filter((milestone) => {
+        if (milestone === null || typeof milestone !== "object") return false;
+        const candidate = milestone as Record<string, unknown>;
+        return typeof candidate.dueDate === "string" && typeof candidate.key === "string";
+      })
+      .map((milestone) => {
+        const item = milestone as Record<string, unknown>;
+        return {
+          key: String(item.key),
+          dueDate: normalizeDate(item.dueDate),
+          label: normalizeDate(item.label),
+        };
+      })
+      .sort((left, right) => {
+        if (left.dueDate < right.dueDate) return -1;
+        if (left.dueDate > right.dueDate) return 1;
+        if (left.key < right.key) return -1;
+        if (left.key > right.key) return 1;
+        return 0;
+      });
+
+    if (candidateMilestones.length === 0) return [] as string[];
+
+    const existingStates = (tables.notification_milestone_states ?? []).filter(
+      (row) =>
+        String(row.circuit_id) === circuitId &&
+        Number(row.expiry_version) === expiryVersion,
+    );
+
+    const existingStateKeys = new Set(existingStates.map((row) => String(row.milestone_key)));
+    const now = new Date().toISOString();
+    const eventIds: string[] = [];
+    const createdAt = now;
+    const isFirstInvocation = existingStates.length === 0;
+
+    if (isFirstInvocation) {
+      const catchupKeys: string[] = [];
+      tables.notification_milestone_states ??= [];
+      const lastIndex = candidateMilestones.length - 1;
+      for (let index = 0; index < candidateMilestones.length; index += 1) {
+        const milestone = candidateMilestones[index];
+        if (index < lastIndex) {
+          tables.notification_milestone_states.push({
+            circuit_id: circuitId,
+            expiry_version: expiryVersion,
+            milestone_key: milestone.key,
+            due_date: milestone.dueDate,
+            state: "satisfied",
+            event_id: null,
+            created_at: now,
+          });
+          catchupKeys.push(milestone.key);
+          continue;
+        }
+
+        const eventId = crypto.randomUUID();
+        tables.notification_events ??= [];
+        tables.notification_events.push({
+          id: eventId,
+          circuit_id: circuitId,
+          expiry_version: expiryVersion,
+          rule_id: ruleId,
+          milestone_key: milestone.key,
+          due_date: milestone.dueDate,
+          status: "pending",
+          generated_at: createdAt,
+          is_catch_up: lastIndex > 0,
+          catch_up_milestone_keys: lastIndex > 0 ? [...catchupKeys, milestone.key] : [],
+        });
+        tables.notification_milestone_states.push({
+          circuit_id: circuitId,
+          expiry_version: expiryVersion,
+          milestone_key: milestone.key,
+          due_date: milestone.dueDate,
+          state: "event_created",
+          event_id: eventId,
+          created_at: now,
+        });
+        eventIds.push(eventId);
+      }
+      return eventIds;
+    }
+
+    for (const milestone of candidateMilestones) {
+      if (existingStateKeys.has(milestone.key)) continue;
+
+      const eventId = crypto.randomUUID();
+      tables.notification_events ??= [];
+      tables.notification_events.push({
+        id: eventId,
+        circuit_id: circuitId,
+        expiry_version: expiryVersion,
+        rule_id: ruleId,
+        milestone_key: milestone.key,
+        due_date: milestone.dueDate,
+        status: "pending",
+        generated_at: createdAt,
+        is_catch_up: false,
+        catch_up_milestone_keys: [],
+      });
+      tables.notification_milestone_states.push({
+        circuit_id: circuitId,
+        expiry_version: expiryVersion,
+        milestone_key: milestone.key,
+        due_date: milestone.dueDate,
+        state: "event_created",
+        event_id: eventId,
+        created_at: now,
+      });
+      eventIds.push(eventId);
+    }
+
+    return eventIds;
+  }
+
+  function parseTimestamp(value: unknown): number {
+    const asNumber = Number(value);
+    if (!Number.isNaN(asNumber) && Number.isFinite(asNumber)) return asNumber;
+    const parsed = Date.parse(normalizeDate(value));
+    return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
+  }
+
+  function parseStatusReadyForClaim(row: Row, nowIso: string) {
+    if (row.status !== "queued" && row.status !== "retry_scheduled") return false;
+    if (row.status === "queued") return true;
+    if (row.next_attempt_at === null || row.next_attempt_at === undefined) return true;
+    const nextAttempt = parseTimestamp(row.next_attempt_at);
+    return nextAttempt <= parseTimestamp(nowIso);
+  }
+
+  function callClaimNotificationDeliveries(args: Record<string, unknown>) {
+    const limit = Math.max(0, Number(args.p_limit ?? 100));
+    const nowIso = new Date().toISOString();
+    const candidates = ((tables.notification_deliveries ?? []).filter((row) =>
+      parseStatusReadyForClaim(row, nowIso),
+    ) as Row[])
+      .sort((left, right) => {
+        if (String(left.updated_at || "") < String(right.updated_at || "")) return -1;
+        if (String(left.updated_at || "") > String(right.updated_at || "")) return 1;
+        return String(left.id).localeCompare(String(right.id));
+      })
+      .slice(0, limit);
+
+    const claimedIds = new Set(candidates.map((row) => String(row.id)));
+    const claimedRows: Row[] = [];
+    for (const row of tables.notification_deliveries ?? []) {
+      if (!claimedIds.has(String(row.id))) continue;
+      const updatedAttempts = Number(row.attempts ?? 0) + 1;
+      row.status = "sending";
+      row.attempts = updatedAttempts;
+      row.updated_at = nowIso;
+      claimedRows.push({
+        id: row.id,
+        event_id: row.event_id,
+        channel: row.channel,
+        target_hash: row.target_hash,
+        target_ciphertext: row.target_ciphertext,
+        status: row.status,
+        attempts: row.attempts,
+        next_attempt_at: row.next_attempt_at,
+        idempotency_key: row.idempotency_key,
+      });
+    }
+
+    return claimedRows;
+  }
+
+    const client = {
+      from: (table: string) => {
       const built = buildQuery(table, []);
       const chain = built.chain as Record<string, unknown>;
       chain.upsert = (values: Row | Row[], options?: { onConflict?: string; ignoreDuplicates?: boolean }) => {
@@ -237,9 +424,25 @@ export function makeFakeClient(initial: Record<string, Row[]>) {
       return chain;
     },
     _tables: tables,
-    _upsertedEvents: upsertedEvents,
-    _upsertedDeliveries: upsertedDeliveries,
-  } as unknown as FakeClient;
+      _upsertedEvents: upsertedEvents,
+      _upsertedDeliveries: upsertedDeliveries,
+      rpc: (functionName: string, args: Record<string, unknown> = {}) => {
+        const rpcChain: RpcChain = {
+          then(onfulfilled?: (value: QueryOutcome) => QueryOutcome | PromiseLike<QueryOutcome>) {
+            let data: QueryOutcome["data"];
+            if (functionName === "ensure_due_notification_events") {
+              data = callEnsureDueNotificationEvents(args);
+            } else if (functionName === "claim_notification_deliveries") {
+              data = callClaimNotificationDeliveries(args);
+            } else {
+              data = [];
+            }
+            return Promise.resolve(onfulfilled ? onfulfilled({ data, error: null }) : { data, error: null });
+          },
+        };
+        return rpcChain;
+      },
+    } as unknown as FakeClient;
 
   return { client, tables };
 }
