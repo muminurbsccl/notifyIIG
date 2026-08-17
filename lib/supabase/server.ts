@@ -3,7 +3,9 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { getPublicConfig } from "@/lib/config";
 
-export async function createServerSupabaseClient() {
+type CookieWriteMode = "best-effort" | "required";
+
+async function createConfiguredServerClient(cookieWriteMode: CookieWriteMode) {
   const config = getPublicConfig();
   if (!config.configured || !config.supabaseUrl || !config.supabaseAnonKey) {
     throw new Error("Supabase public configuration is missing");
@@ -20,11 +22,20 @@ export async function createServerSupabaseClient() {
           cookiesToSet.forEach(({ name, value, options }) => {
             cookieStore.set(name, value, options);
           });
-        } catch {
+        } catch (cause) {
+          if (cookieWriteMode === "required") throw cause;
           // Server components can read cookies but cannot always write them.
           // Middleware performs the session refresh for those requests.
         }
       },
     },
   });
+}
+
+export async function createServerSupabaseClient() {
+  return createConfiguredServerClient("best-effort");
+}
+
+export async function createWritableServerSupabaseClient() {
+  return createConfiguredServerClient("required");
 }

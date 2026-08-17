@@ -69,6 +69,22 @@ export async function listCircuits(
   return (data ?? []) as CircuitRecord[];
 }
 
+export async function findExistingImportCandidateKeys(
+  supabase: SupabaseClient,
+  candidates: readonly { candidateKey: string; providerCode: string; providerName: string; identifiers: readonly { normalizedValue: string; primary: boolean }[] }[],
+): Promise<Set<string>> {
+  if (candidates.length === 0) return new Set();
+  const payload = candidates.flatMap((candidate) => {
+    const primary = candidate.identifiers.find((identifier) => identifier.primary);
+    return primary ? [{ candidateKey: candidate.candidateKey, providerCode: candidate.providerCode, providerName: candidate.providerName, normalizedValue: primary.normalizedValue }] : [];
+  });
+  const { data, error } = await supabase.rpc("find_import_collision_keys", { p_candidates: payload });
+  if (error) throw error;
+  const candidateKeys = new Set(candidates.map((candidate) => candidate.candidateKey));
+  if (!Array.isArray(data) || data.some((key) => typeof key !== "string" || !candidateKeys.has(key))) throw new Error("Database returned an invalid collision lookup result");
+  return new Set(data);
+}
+
 export async function getCircuit(
   supabase: SupabaseClient,
   profile: Profile,

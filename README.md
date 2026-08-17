@@ -5,7 +5,7 @@ Secure upstream circuit expiry tracking and notification operations for BSCPLC.
 - **Stack:** Next.js 15 (App Router) on Vercel, Supabase (Postgres + Auth + RLS)
 - **Production URL:** `https://notifyiig.vercel.app`
 - **Scheduled job:** daily `0 3 * * *` UTC via `vercel.json` cron → `GET /api/cron/expiry-notifications`
-- **Repository:** `D:\upstreamnotify` (not a Git repository — initialize before deployment)
+- **Repository:** `https://github.com/muminurbsccl/notifyIIG`
 
 > **Hosting approval gate:** Vercel Hobby is suitable for technical
 > proof-of-concept use only. Confirm an approved organizational production plan
@@ -59,6 +59,21 @@ authenticated zero-circuit cron run returns `200` with zero delivery counts.
 
 4. They can now sign in at `/login` and reach `/dashboard`. Other roles:
    `operations_editor`, `provider_manager`, `auditor`, `viewer`.
+
+### Hosted Auth URL configuration
+
+Before testing a production magic link, open **Supabase Dashboard →
+Authentication → URL Configuration** and set:
+
+- **Site URL:** `https://notifyiig.vercel.app`
+- **Redirect URL:** `https://notifyiig.vercel.app/auth/callback`
+
+Keep `http://localhost:3000/auth/callback` as a separate development redirect.
+Do not enable wildcard preview callbacks unless a preview-auth policy is
+approved. Set Vercel `APP_BASE_URL=https://notifyiig.vercel.app` and redeploy
+after changing it. Verify one password login and one newly requested production
+magic link; both must reach `/dashboard`. An expired/reused link must return a
+generic message on `/login` and must not expose its code or provider response.
 
 ## 3. Import workbook data and complete current records
 
@@ -185,6 +200,21 @@ database writes additionally require `--apply` and typed project confirmation.
 5. **Claims test:** run `node --env-file=.env.local scripts/verify-notification-claims.mjs`
    with `ALLOW_NOTIFICATION_CLAIM_TEST=true` only on localhost or a `_test`
    database, then confirm expected event/delivery counts before first live send.
+6. **Public routes:** confirm `/login`, `/robots.txt`, `/icon.png`, and
+   `/apple-icon.png` return `200`; unauthenticated `/dashboard` must redirect to
+   `/login`. `/auth/callback` without a code must safely redirect to
+   `/login?error=invalid-link`.
+7. **Lighthouse:** run clean production audits at least three times per form
+   factor and retain reports outside Git:
+
+   ```powershell
+   npx --yes lighthouse "https://notifyiig.vercel.app/login" --only-categories=performance,accessibility,best-practices,seo --output=html --output-path="$env:TEMP\notifyiig-mobile.html" --chrome-flags="--headless --incognito"
+   npx --yes lighthouse "https://notifyiig.vercel.app/login" --preset=desktop --only-categories=performance,accessibility,best-practices,seo --output=html --output-path="$env:TEMP\notifyiig-desktop.html" --chrome-flags="--headless --incognito"
+   ```
+
+   The acceptance target is 100 in Performance, Accessibility, Best Practices,
+   and SEO in a representative clean run for both mobile and desktop. Repeated
+   runs expose hosting variance; do not commit the reports.
 
 ---
 

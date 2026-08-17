@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
+  createServerClient: vi.fn(),
 }));
 
 vi.mock("server-only", () => ({}));
@@ -15,15 +16,17 @@ vi.mock("@/lib/config", () => ({
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
-  createServerSupabaseClient: vi.fn(async () => ({
-    auth: { getUser: mocks.getUser },
-  })),
+  createServerSupabaseClient: mocks.createServerClient,
 }));
 
-import { requireApiProfile } from "@/lib/auth";
+import { getAuthContext, requireApiProfile } from "@/lib/auth";
 
 describe("API authentication error mapping", () => {
-  beforeEach(() => mocks.getUser.mockReset());
+  beforeEach(() => {
+    mocks.getUser.mockReset();
+    mocks.createServerClient.mockReset();
+    mocks.createServerClient.mockResolvedValue({ auth: { getUser: mocks.getUser } });
+  });
 
   it("maps a normal missing session to 401", async () => {
     mocks.getUser.mockResolvedValue({
@@ -41,5 +44,38 @@ describe("API authentication error mapping", () => {
     });
 
     await expect(requireApiProfile()).rejects.toMatchObject({ status: 503 });
+  });
+
+  it("uses an injected session client instead of creating another client", async () => {
+    const maybeSingle = vi.fn().mockResolvedValue({
+      data: {
+        id: "user-1",
+        email: "person@example.com",
+        full_name: "Example Person",
+        role: "admin",
+        active: true,
+        allowed_provider_ids: [],
+      },
+      error: null,
+    });
+    const injected = {
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: "user-1", email: "person@example.com" } },
+          error: null,
+        }),
+      },
+      from: vi.fn(() => ({
+        select: vi.fn(() => ({
+          eq: vi.fn(() => ({ maybeSingle })),
+        })),
+      })),
+    };
+
+    const context = await getAuthContext(injected as never);
+
+    expect(context?.profile.role).toBe("admin");
+    expect(context?.supabase).toBe(injected);
+    expect(mocks.createServerClient).not.toHaveBeenCalled();
   });
 });

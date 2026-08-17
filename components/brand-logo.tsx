@@ -11,15 +11,11 @@ export function BrandLogo({ compact = false }: BrandLogoProps): ReactElement {
       <Image
         alt="BSCPLC logo"
         className="brand-logo-image"
-        height={56}
+        height={295}
         priority
-        src="/brand/bscplc-logo.webp"
-        width={180}
+        src="/brand/bscplc-logo.jpg"
+        width={320}
       />
-      <span className="brand-copy">
-        <strong>BSCPLC</strong>
-        {!compact && <small>Circuit notifications</small>}
-      </span>
     </div>
   );
 }

@@ -1,25 +1,15 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { requireApiProfile } from "@/lib/auth";
 import { jsonError } from "@/lib/http";
-import { importCommitSchema } from "@/lib/validation";
+import { importCommitSchema, importCommitTransportSchema } from "@/lib/validation";
 import { computePreviewChecksum, verifyPreviewSignature } from "@/lib/import/xlsx";
-import { canonicalCircuitId } from "@/lib/domain/import-normalizer";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
 
-const approvedCountKeys = ["createdCircuits", "skippedCircuits", "mergedCircuits", "versionedCircuits", "invoiceCount"] as const;
-
-function parseCommitCounts(value: unknown): Record<string, number> | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-  const record = value as Record<string, unknown>;
-  if (Object.keys(record).length !== approvedCountKeys.length) return null;
-  const counts: Record<string, number> = {};
-  for (const key of approvedCountKeys) {
-    const number = record[key];
-    if (typeof number !== "number" || !Number.isFinite(number) || !Number.isInteger(number) || number < 0) return null;
-    counts[key] = number;
-  }
-  return counts;
-}
+const countSchema = z.object({ createdCircuits: z.number().int().nonnegative(), skippedCircuits: z.number().int().nonnegative(), mergedCircuits: z.number().int().nonnegative(), versionedCircuits: z.number().int().nonnegative(), invoiceCount: z.number().int().nonnegative() }).strict();
+const strictUuidSchema = z.string().uuid().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+const commitSuccessSchema = z.object({ batchId: strictUuidSchema, counts: countSchema }).strict();
+const commitRejectionSchema = z.object({ status: z.literal("rejected"), batchId: strictUuidSchema, errorCode: z.literal("IMPORT_COMMIT_FAILED") }).strict();
 
 export async function POST(request: Request) {
   try {
@@ -30,26 +20,19 @@ export async function POST(request: Request) {
     } catch {
       return NextResponse.json({ error: { code: "INVALID_JSON", message: "Request body must be valid JSON" } }, { status: 400 });
     }
-    const input = importCommitSchema.parse(payload);
-    const candidateKeys = new Set(input.preview.circuitCandidates.map((candidate) => `${candidate.providerName.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_|_$/g, "")}:${canonicalCircuitId(candidate.externalCircuitId)}`));
-    for (const key of Object.keys(input.decisions)) {
-      if (!candidateKeys.has(key)) {
-        return NextResponse.json({ error: { code: "UNKNOWN_IMPORT_DECISION", message: `Import decision does not match a preview candidate: ${key}` } }, { status: 422 });
-      }
-    }
-    for (const issue of input.preview.issues.filter((item) => item.code === "DUPLICATE_IDENTIFIER")) {
-      if (!issue.decisionKey || !input.decisions[issue.decisionKey]) {
-        return NextResponse.json({ error: { code: "DUPLICATE_DECISION_REQUIRED", message: "Every duplicate identifier requires skip, merge, or create review" } }, { status: 422 });
-      }
-    }
+    const transport = importCommitTransportSchema.parse(payload);
     if (
-      computePreviewChecksum(input.preview) !== input.previewChecksum ||
-      !verifyPreviewSignature(input.previewChecksum, input.checksum, input.previewSignature, input.filename, input.sheetNames)
+      computePreviewChecksum(transport.preview) !== transport.previewChecksum ||
+      !verifyPreviewSignature(transport.previewChecksum, transport.checksum, transport.previewSignature, transport.filename, transport.sheetNames, transport.previewIssuedAt)
     ) {
       return NextResponse.json(
         { error: { code: "PREVIEW_CHANGED", message: "The preview changed or expired; upload and review the workbook again" } },
         { status: 422 },
       );
+    }
+    const input = importCommitSchema.parse(payload);
+    if (input.preview.issues.some((issue) => issue.severity === "error")) {
+      return NextResponse.json({ error: { code: "IMPORT_PREVIEW_BLOCKED", message: "Resolve all blocking preview issues before commit" } }, { status: 422 });
     }
 
     const service = createServiceSupabaseClient();
@@ -62,22 +45,20 @@ export async function POST(request: Request) {
       p_decisions: input.decisions,
     });
     if (error) throw error;
-    const result = (data ?? {}) as Record<string, unknown>;
-    if (result.status === "rejected") {
+    if (data && typeof data === "object" && !Array.isArray(data) && (data as Record<string, unknown>).status === "rejected") {
+      const rejected = commitRejectionSchema.safeParse(data);
+      if (!rejected.success) throw new Error("Import commit returned an invalid rejection result");
       return NextResponse.json(
         {
           error: { code: "IMPORT_COMMIT_REJECTED", message: "The import was rejected; review the workbook and try again" },
-          batchId: result.batchId,
-          issues: input.preview.issues,
+          batchId: rejected.data.batchId,
         },
         { status: 422 },
       );
     }
-    const counts = parseCommitCounts(result.counts);
-    if (typeof result.batchId !== "string" || !counts) {
-      throw new Error("Import commit returned an invalid result");
-    }
-    return NextResponse.json({ batchId: result.batchId, counts, issues: input.preview.issues });
+    const committed = commitSuccessSchema.safeParse(data);
+    if (!committed.success) throw new Error("Import commit returned an invalid result");
+    return NextResponse.json(committed.data);
   } catch (cause) {
     return jsonError(cause);
   }

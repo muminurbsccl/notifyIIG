@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { redactAuditValue } from "@/lib/domain/audit-redaction";
 
 const migration = readFileSync("supabase/migrations/001_initial.sql", "utf8");
+const importMigration = readFileSync("supabase/migrations/002_multi_sheet_workbook_import.sql", "utf8");
 const migration003 = readFileSync("supabase/migrations/003_notification_production_completion.sql", "utf8");
 const seed = readFileSync("supabase/seed.sql", "utf8");
 
@@ -72,6 +73,14 @@ describe("Supabase security and deployment artifacts", () => {
     expect(migration).toContain("values ('provider', target_provider_id");
     expect(duplicateSelect).toBeGreaterThan(functionStart);
     expect(duplicateSelect).toBeLessThan(duplicateDecision);
+  });
+
+  it("extends import security without weakening the initial policies", () => {
+    expect(importMigration).toContain("alter table public.circuit_identifiers enable row level security");
+    expect(importMigration).toContain("create policy circuit_identifiers_select_scope");
+    expect(importMigration).toContain("create policy circuit_identifiers_write_scope");
+    expect(importMigration).not.toContain("grant execute on function public.commit_import_batch(uuid, text, text, jsonb, jsonb, jsonb) to authenticated");
+    expect(importMigration).toContain("grant execute on function public.commit_import_batch(uuid, text, text, jsonb, jsonb, jsonb) to service_role");
   });
 
   it("keeps the safe seed free of contract and recipient data", () => {
