@@ -14,6 +14,10 @@ export type DueMilestone = {
   dueDate: string;
 };
 
+type BuildMilestonesOptions = {
+  firstMilestoneDueDate?: string;
+};
+
 type DateParts = {
   year: number;
   month: number;
@@ -111,8 +115,18 @@ export function getDhakaBusinessDate(now: Date = new Date()): string {
 export function buildMilestones(
   expiryDate: string,
   enabled: MilestoneDefinition[],
+  options: BuildMilestonesOptions = {},
 ): DueMilestone[] {
   parseDateOnly(expiryDate);
+
+  const firstMilestoneDueDate = options.firstMilestoneDueDate;
+  if (firstMilestoneDueDate !== undefined) {
+    parseDateOnly(firstMilestoneDueDate);
+    if (firstMilestoneDueDate > expiryDate) {
+      throw new Error("first milestone override must be before or on expiry date");
+    }
+  }
+
   return enabled
     .filter((definition) => definition.enabled !== false)
     .map((definition) => {
@@ -124,9 +138,14 @@ export function buildMilestones(
         );
       }
 
-      const dueDate = hasMonths
-        ? subtractCalendarMonths(expiryDate, definition.monthsBefore as number)
-        : subtractCalendarDays(expiryDate, definition.daysBefore as number);
+      const isFirstMilestone = definition.monthsBefore === 4 || definition.key === "T-4M";
+      const dueDate =
+        firstMilestoneDueDate !== undefined && isFirstMilestone
+          ? firstMilestoneDueDate
+          : hasMonths
+            ? subtractCalendarMonths(expiryDate, definition.monthsBefore as number)
+            : subtractCalendarDays(expiryDate, definition.daysBefore as number);
+
       return { key: definition.key, label: definition.label, dueDate };
     });
 }

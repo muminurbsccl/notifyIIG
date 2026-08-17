@@ -32,4 +32,33 @@ describe("expiry date rules", () => {
       { key: "T-30D", label: "Urgent reminder", dueDate: "2026-08-01" },
     ]);
   });
+
+  it("overrides the first calendar-four-month milestone while keeping later milestones", () => {
+    expect(
+      buildMilestones(
+        "2031-10-31",
+        [
+          { key: "T-4M", label: "Initial reminder", monthsBefore: 4 },
+          { key: "T-30D", label: "Urgent reminder", daysBefore: 30 },
+        ],
+        { firstMilestoneDueDate: "2031-06-17" },
+      ),
+    ).toEqual([
+      { key: "T-4M", label: "Initial reminder", dueDate: "2031-06-17" },
+      { key: "T-30D", label: "Urgent reminder", dueDate: "2031-10-01" },
+    ]);
+  });
+
+  it("rejects invalid first milestone overrides after expiry", () => {
+    expect(() =>
+      buildMilestones(
+        "2031-10-31",
+        [
+          { key: "T-4M", label: "Initial reminder", monthsBefore: 4 },
+          { key: "T-30D", label: "Urgent reminder", daysBefore: 30 },
+        ],
+        { firstMilestoneDueDate: "2031-11-01" },
+      ),
+    ).toThrow("before or on expiry");
+  });
 });
