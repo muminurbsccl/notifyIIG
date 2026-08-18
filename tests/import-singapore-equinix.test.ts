@@ -64,4 +64,39 @@ describe("Singapore Equinix sheet adapter", () => {
       "CONTRADICTORY_DATES", "MISSING_IDENTIFIER", "INVALID_DATE", "UNMAPPED_CELL",
     ]));
   });
+
+  it("parses the real operator workbook two-section layout and merges matching serials", () => {
+    const realServiceHeader = ["SL", "Type of Service", "Service Order No with price in USD", "Order Validity", "Deactivation Date", "Starting Date renewal or termination procedure"];
+    const realBillingHeader = ["Sl No", "Circuit Serial No", "Description", "Activation Date", "NRC (USD)", "MRC (USD)", "Remark"];
+    const parsed = singaporeEquinixAdapter.parse({ name: "Singapore Equinix", rows: [
+      realServiceHeader,
+      ["1", "BDREN Cross Connect", "1-246460244684 (314 USD)", "19 Feb 2025 to 18 Feb 2026\nFor any discontinuation, we have to inform them before 3 months of the validity", "18-Feb-27", "21-Oct-26"],
+      ["4", "2X100 GE EIE Port", "1-250112313476 (6300 USD)- Newly Signed SO", "01 Sep 2025 to 31 Aug 2026\nFor any discontinuation, we have to inform them before 3 months of the validity", "31-Aug-26", "3-May-26"],
+      realBillingHeader,
+      ["1", "1-218045771258", "Twenty cross connect MRC", "1-Aug-22", "", "5,232.00", "Renew for 2 yrs"],
+      ["3", "1-250112313476", "Equinix Internet Exchange -Remorte Port-2x100GE MRC", "1-Aug-22", "", "6,300.00", "Renew for 2 yrs"],
+      ["4", "1-216640819808", "Rackspace", "1-Jun-22", "", "1,155.00", "Renew for 2 yrs"],
+      ["", "", "AC Power", "", "", "1,306.93", ""],
+    ] }, "2026-08-17");
+    const preview = mergeAdapterResults([parsed]);
+    const bySerial = new Map(preview.circuitCandidates.map((candidate) => [candidate.externalCircuitId, candidate]));
+    expect(bySerial.get("1-250112313476")).toMatchObject({
+      providerCode: "EQUINIX", monthlyCost: 6300, currency: "USD",
+      expiryDate: "2026-08-31", renewalProcedureStartDate: "2026-05-03", status: "active",
+      startDate: "2022-08-01", notes: expect.stringContaining("01 Sep 2025 to 31 Aug 2026"),
+    });
+    expect(bySerial.get("1-218045771258")).toMatchObject({
+      monthlyCost: 5232, currency: "USD", startDate: "2022-08-01", status: "draft",
+      notes: expect.stringContaining("Twenty cross connect MRC"),
+    });
+    const rackspace = bySerial.get("1-216640819808");
+    expect(rackspace).toMatchObject({ monthlyCost: 1155, currency: "USD", status: "draft" });
+    expect(rackspace!.notes).toContain("AC Power");
+    expect(rackspace!.notes).not.toContain("1,306.93");
+    expect(preview.circuitCandidates.filter((candidate) => candidate.externalCircuitId === "1-246460244684")).toHaveLength(1);
+    expect(preview.circuitCandidates.find((candidate) => candidate.externalCircuitId === "1-246460244684")).toMatchObject({
+      serviceType: "BDREN Cross Connect", expiryDate: "2027-02-18", renewalProcedureStartDate: "2026-10-21", status: "active",
+    });
+    expect(parsed.issues.map((issue) => issue.code)).not.toEqual(expect.arrayContaining(["INVALID_SHEET_STRUCTURE"]));
+  });
 });

@@ -42,7 +42,7 @@ export function mergeAdapterResults(results: readonly SheetAdapterResult[]): Imp
     const current = providerMap.get(provider.code);
     if (!current) providerMap.set(provider.code, { ...provider, sources: uniqueSources(provider.sources.map((source) => ({ ...source }))) });
     else {
-      if (current.name !== provider.name) issues.push({ code: "CONFLICTING_DUPLICATE", severity: "error", message: `Provider ${provider.code} has conflicting names`, source: provider.sources[0] });
+      if (current.name.toLowerCase() !== provider.name.toLowerCase()) issues.push({ code: "CONFLICTING_DUPLICATE", severity: "error", message: `Provider ${provider.code} has conflicting names`, source: provider.sources[0] });
       current.sources = uniqueSources([...current.sources, ...provider.sources]);
     }
   }
@@ -54,6 +54,8 @@ export function mergeAdapterResults(results: readonly SheetAdapterResult[]): Imp
     inputCandidateCount += 1;
     const key = `${candidate.providerCode}:${primary.normalizedValue}`;
     const normalizedCandidate = cloneCandidate(candidate);
+    const mergedProvider = providerMap.get(candidate.providerCode);
+    if (mergedProvider) normalizedCandidate.providerName = mergedProvider.name;
     normalizedCandidate.identifiers = canonicalizeIdentifiers(normalizedCandidate.identifiers, primary.normalizedValue, issues, normalizedCandidate.sources[0]);
     const group = groups.get(key) ?? []; group.push(normalizedCandidate); groups.set(key, group);
   }

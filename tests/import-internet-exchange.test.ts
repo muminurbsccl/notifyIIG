@@ -49,4 +49,25 @@ describe("Internet Exchange sheet adapter", () => {
     expect(result.circuitCandidates[0]).toMatchObject({ status: "expired", notificationEnabled: false, ownerOverride: null });
     expect(result.circuitCandidates[1]).toMatchObject({ status: "draft", notificationEnabled: false, ownerOverride: null });
   });
+
+  it("parses the real operator workbook layout with section heading and full column set", () => {
+    const realHeader = ["Sl. No.", "Link Name /Customer ID", "Circuit ID", "Link Type", "Capacity", "Provider Name", "Segment name", "Connected Router", "Activation Date", "Deactivation Date", "Permission Expiry Date", "Monthly MRC\n(in USD)", "Starting Date renewal or termination procedure"];
+    const result = internetExchangeAdapter.parse({ name: "Internet Exchange", rows: [realHeader,
+      ["Singapore Internet Exchange (SGIX) @ Singapore", "", "", "", "", "", "", "", "", "", "", "", ""],
+      ["1", "SGIX000191\nUEN : 200916410W", "103.16.102.141", "IP Port", "100 G", "Singapore Internet Exchange", "SMW5", "EQ-01", "20-Apr-26", "Minimum contract years 1 year (intial term) and increase month wise. Central Bank permission is taken up to 19 April 2027", "19-Apr-27", "MRC: 1800 SGD", "20-Dec-26"],
+    ] }, "2026-08-17");
+    expect(result.circuitCandidates).toHaveLength(1);
+    expect(result.circuitCandidates[0]).toMatchObject({
+      externalCircuitId: "103.16.102.141", providerCode: "SGIX", providerName: "Singapore Internet Exchange",
+      serviceType: "IP Port", capacity: "100 G", segment: "SMW5", connectedRouter: "EQ-01",
+      startDate: "2026-04-20", expiryDate: "2027-04-19", renewalProcedureStartDate: "2026-12-20",
+      monthlyCost: 1800, currency: "SGD", status: "active",
+      notificationEnabled: true, ownerOverride: "BSCPLC IIG Support",
+    });
+    expect(result.circuitCandidates[0].identifiers).toEqual([
+      expect.objectContaining({ kind: "circuit", value: "103.16.102.141", primary: true }),
+      expect.objectContaining({ kind: "customer_link", value: "SGIX000191", primary: false }),
+    ]);
+    expect(result.issues).toEqual([]);
+  });
 });

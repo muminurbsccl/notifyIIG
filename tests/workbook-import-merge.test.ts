@@ -83,4 +83,26 @@ describe("workbook import merge", () => {
     expect(preview.summary).toMatchObject({ inputCandidateCount: 0, serviceCount: 0, mergedCount: 0 });
     expect(preview.issues).toContainEqual(expect.objectContaining({ code: "MISSING_IDENTIFIER", severity: "error" }));
   });
+
+  it("reconciles provider names that differ only in case without a conflict issue", () => {
+    const orange = candidate({ providerCode: "ORANGE", providerName: "Orange" });
+    const ORANGE = candidate({ providerCode: "ORANGE", providerName: "ORANGE",
+      identifiers: [{ kind: "service_order", value: "SO-2", normalizedValue: "SO-2", primary: true }],
+      sources: [{ sheetName: "Synthetic", rowNumber: 5 }],
+    });
+    const preview = mergeAdapterResults([
+      { providers: [{ code: "ORANGE", name: "Orange", sources: [{ sheetName: "Synthetic", rowNumber: 2 }] }], circuitCandidates: [orange], issues: [] },
+      { providers: [{ code: "ORANGE", name: "ORANGE", sources: [{ sheetName: "Synthetic", rowNumber: 4 }] }], circuitCandidates: [ORANGE], issues: [] },
+    ]);
+    expect(preview.issues.filter((issue) => issue.code === "CONFLICTING_DUPLICATE")).toHaveLength(0);
+    for (const candidate of preview.circuitCandidates) expect(candidate.providerName).toBe("Orange");
+  });
+
+  it("reports genuinely conflicting provider names as a blocking issue", () => {
+    const preview = mergeAdapterResults([
+      { providers: [{ code: "ORANGE", name: "Orange", sources: [{ sheetName: "Synthetic", rowNumber: 2 }] }], circuitCandidates: [], issues: [] },
+      { providers: [{ code: "ORANGE", name: "Orange Telecom", sources: [{ sheetName: "Synthetic", rowNumber: 4 }] }], circuitCandidates: [], issues: [] },
+    ]);
+    expect(preview.issues).toContainEqual(expect.objectContaining({ code: "CONFLICTING_DUPLICATE", severity: "error", message: "Provider ORANGE has conflicting names" }));
+  });
 });
