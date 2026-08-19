@@ -14,6 +14,7 @@ describe("NoticeDateCell", () => {
     expect(html).toContain("2026-05-01");
     expect(html).toContain("badge-gold");
     expect(html).toContain("Overdue");
+    expect(html).toContain("notice-date-overdue");
   });
 
   it("renders the fallback date without a badge when not overdue", () => {
@@ -25,6 +26,7 @@ describe("NoticeDateCell", () => {
     expect(html).toContain("2026-11-18");
     expect(html).not.toContain("badge-gold");
     expect(html).not.toContain("Overdue");
+    expect(html).not.toContain("notice-date-overdue");
   });
 
   it("renders an em dash when there is no notice date", () => {
@@ -34,5 +36,6 @@ describe("NoticeDateCell", () => {
     };
     const html = renderToString(createElement(NoticeDateCell, { circuit, businessDate: "2026-08-19" }));
     expect(html).toContain("—");
+    expect(html).not.toContain("notice-date-overdue");
   });
 });
