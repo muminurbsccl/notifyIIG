@@ -25,6 +25,7 @@ type PreviewResponse = {
   checksum: string;
   previewChecksum: string;
   previewSignature: string;
+  previewIssuedAt: string;
   sheetNames: string[];
 };
 
@@ -35,6 +36,26 @@ type CommitCounts = {
   versionedCircuits: number;
   invoiceCount: number;
 };
+
+// Builds the /api/import/commit request body from a preview response. The
+// transport fields must sit at the TOP level of the payload — workbookPreview
+// validation is strict and rejects unknown keys inside `preview`.
+export function toCommitPayload(
+  preview: PreviewResponse,
+  decisions: Record<string, string>,
+): {
+  filename: string;
+  checksum: string;
+  previewChecksum: string;
+  previewSignature: string;
+  previewIssuedAt: string;
+  sheetNames: string[];
+  preview: unknown;
+  decisions: Record<string, string>;
+} {
+  const { filename, checksum, previewChecksum, previewSignature, previewIssuedAt, sheetNames, ...previewData } = preview;
+  return { filename, checksum, previewChecksum, previewSignature, previewIssuedAt, sheetNames, preview: previewData, decisions };
+}
 
 const DECISION_OPTIONS = ["skip", "merge", "create"] as const;
 
@@ -107,19 +128,11 @@ export function ImportWorkflow() {
     setError("");
     setBusy(true);
     try {
-      const { filename, checksum, previewChecksum, previewSignature, sheetNames, ...previewData } = preview;
+      const payload = toCommitPayload(preview, decisions);
       const response = await fetch("/api/import/commit", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          filename,
-          checksum,
-          previewChecksum,
-          previewSignature,
-          sheetNames,
-          preview: previewData,
-          decisions,
-        }),
+        body: JSON.stringify(payload),
       });
       const body = await response.json();
       if (!response.ok) {
