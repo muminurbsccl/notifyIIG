@@ -610,6 +610,11 @@ code {
   color: var(--muted);
 }
 
+.notice-date-overdue {
+  color: var(--gold-700);
+  font-weight: 600;
+}
+
 .metric-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
