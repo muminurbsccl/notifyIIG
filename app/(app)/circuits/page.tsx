@@ -3,6 +3,8 @@ import { EmptyState } from "@/components/empty-state";
 import { StatusBadge } from "@/components/status-badge";
 import { requireProfile } from "@/lib/auth";
 import { listCircuits, listProviders } from "@/lib/data";
+import { NoticeDateCell } from "@/components/notice-date-cell";
+import { getDhakaBusinessDate } from "@/lib/domain/date-rules";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +23,7 @@ export default async function CircuitsPage({
     status: params.status,
   });
   const providers = await listProviders(auth.supabase);
+  const businessDate = getDhakaBusinessDate();
   const providerById = new Map(providers.map((provider) => [provider.id, provider]));
 
   return (
@@ -82,6 +85,7 @@ export default async function CircuitsPage({
                 <th>Action</th>
                 <th>Owner</th>
                 <th>Expiry date</th>
+                <th>Notice date</th>
                 <th>Notifications</th>
               </tr>
             </thead>
@@ -100,6 +104,7 @@ export default async function CircuitsPage({
                   </td>
                   <td>{circuit.owner_override || circuit.owner_user_id || "—"}</td>
                   <td>{circuit.expiry_date ?? "—"}</td>
+                  <NoticeDateCell circuit={circuit} businessDate={businessDate} />
                   <td>{circuit.notification_enabled ? "Yes" : "No"}</td>
                 </tr>
               ))}
