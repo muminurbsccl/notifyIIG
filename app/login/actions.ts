@@ -1,5 +1,6 @@
 "use server";
 
+import { createClient } from "@supabase/supabase-js";
 import { redirect } from "next/navigation";
 import { getAuthContext } from "@/lib/auth";
 import {
@@ -31,6 +32,16 @@ function serviceErrorDestination(method: string): string {
   return `/login?error=service-unavailable${method ? `&method=${method}` : ""}`;
 }
 
+function createServiceRoleClient() {
+  const { supabaseUrl, serviceRoleKey } = getServerConfig();
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("service configuration is missing");
+  }
+  return createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false },
+  });
+}
+
 export async function requestMagicLink(formData: FormData): Promise<void> {
   let destination: string;
   try {
@@ -59,20 +70,68 @@ export async function requestMagicLink(formData: FormData): Promise<void> {
   redirect(destination);
 }
 
-export async function signInWithPassword(formData: FormData): Promise<void> {
+export async function beginSignIn(formData: FormData): Promise<void> {
   let destination: string;
   try {
     const email = requireEmail(formData.get("email"));
+    const { data, error } = await createServiceRoleClient().rpc(
+      "auth_user_has_password",
+      { email },
+    );
+    if (error) throw error;
+
+    if (data === true) {
+      destination = `/login?step=password&email=${encodeURIComponent(email)}`;
+    } else {
+      // Passwordless or unknown email: identical path (anti-enumeration).
+      const baseUrl = validatedAppBaseUrl(getServerConfig().appBaseUrl ?? undefined);
+      const supabase = await createWritableServerSupabaseClient();
+      const { error: otpError } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: authCallbackUrl(baseUrl),
+          shouldCreateUser: false,
+        },
+      });
+      destination = otpError
+        ? isRateLimited(otpError)
+          ? "/login?error=rate-limited"
+          : serviceErrorDestination("")
+        : "/login?notice=link-sent";
+    }
+  } catch (cause) {
+    destination = isInvalidInput(cause)
+      ? "/login?error=invalid-input"
+      : isRateLimited(cause)
+        ? "/login?error=rate-limited"
+        : serviceErrorDestination("");
+  }
+  redirect(destination);
+}
+
+export async function signInWithPassword(formData: FormData): Promise<void> {
+  const step = formData.get("step") === "password";
+  const rawEmail = formData.get("email");
+  const emailParam = step
+    ? `&step=password&email=${encodeURIComponent(String(rawEmail ?? ""))}`
+    : "";
+  const methodParam = step ? "" : "&method=password";
+  const errorDestination = (key: string): string =>
+    `/login?error=${key}${step ? emailParam : methodParam}`;
+
+  let destination: string;
+  try {
+    const email = requireEmail(rawEmail);
     const password = requirePassword(formData.get("password"));
     const supabase = await createWritableServerSupabaseClient();
     const { error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error) {
       destination = isInvalidCredentials(error)
-        ? "/login?error=invalid-credentials&method=password"
+        ? errorDestination("invalid-credentials")
         : isRateLimited(error)
-          ? "/login?error=rate-limited&method=password"
-          : serviceErrorDestination("password");
+          ? errorDestination("rate-limited")
+          : errorDestination("service-unavailable");
     } else {
       const context = await getAuthContext(supabase);
       if (context) {
@@ -80,14 +139,14 @@ export async function signInWithPassword(formData: FormData): Promise<void> {
       } else {
         const { error: signOutError } = await supabase.auth.signOut();
         destination = signOutError
-          ? "/login?error=service-unavailable&method=password"
-          : "/login?error=not-authorized";
+          ? errorDestination("service-unavailable")
+          : `/login?error=not-authorized${step ? emailParam : ""}`;
       }
     }
   } catch (cause) {
     destination = isInvalidInput(cause)
-      ? "/login?error=invalid-input&method=password"
-      : "/login?error=service-unavailable&method=password";
+      ? `/login?error=invalid-input${step ? emailParam : "&method=password"}`
+      : errorDestination("service-unavailable");
   }
   redirect(destination);
 }
