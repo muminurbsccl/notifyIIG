@@ -799,11 +799,13 @@ Append to `app/globals.css`:
   }
 
   .login-brand {
-    flex-direction: row;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 16px;
     padding: 20px 24px;
+  }
+
+  .login-brand-top {
+    display: flex;
+    align-items: center;
+    gap: 16px;
   }
 
   .login-brand h1 {
