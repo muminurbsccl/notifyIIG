@@ -773,3 +773,92 @@ code {
     width: 100%;
   }
 }
+
+/* Login: split-screen layout */
+.login-split {
+  min-height: 100dvh;
+  display: grid;
+  grid-template-columns: minmax(320px, 45%) 1fr;
+}
+
+.login-brand {
+  background: linear-gradient(150deg, #0f172a, #1e3a8a 55%, #1d4ed8);
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 48px;
+}
+
+.login-brand .brand-logo-image {
+  max-width: 160px;
+  height: auto;
+}
+
+.login-brand h1 {
+  margin-top: 28px;
+  font-size: 1.75rem;
+  line-height: 1.25;
+  color: #fff;
+}
+
+.login-brand-tagline {
+  margin-top: 8px;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.login-brand-footer {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 0.85rem;
+}
+
+.login-form-panel {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 100%;
+  max-width: 440px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+
+.login-form-panel h2 {
+  font-size: 1.5rem;
+  margin-bottom: 4px;
+}
+
+.login-form-panel > .muted {
+  margin-bottom: 20px;
+}
+
+@media (max-width: 900px) {
+  .login-split {
+    grid-template-columns: 1fr;
+  }
+
+  .login-brand {
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 16px;
+    padding: 20px 24px;
+  }
+
+  .login-brand h1 {
+    margin-top: 0;
+    font-size: 1.1rem;
+  }
+
+  .login-brand .brand-logo-image {
+    max-width: 56px;
+  }
+
+  .login-brand-tagline,
+  .login-brand-footer {
+    display: none;
+  }
+
+  .login-form-panel {
+    padding: 32px 24px;
+  }
+}
