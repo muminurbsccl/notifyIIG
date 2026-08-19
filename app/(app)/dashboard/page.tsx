@@ -1,9 +1,11 @@
 import { EmptyState } from "@/components/empty-state";
 import { MetricCard } from "@/components/metric-card";
+import { NoticeDateCell } from "@/components/notice-date-cell";
 import { StatusBadge } from "@/components/status-badge";
 import { requireProfile } from "@/lib/auth";
 import { listCircuits, listProviders } from "@/lib/data";
 import { getDhakaBusinessDate } from "@/lib/domain/date-rules";
+import { isNoticeOverdue, noticeDate } from "@/lib/domain/notice-date";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +62,15 @@ export default async function DashboardPage() {
 
   const upcoming = circuits
     .filter((circuit) => circuit.expiry_date && circuit.expiry_date >= businessDate)
-    .sort((a, b) => String(a.expiry_date).localeCompare(String(b.expiry_date)));
+    .sort((a, b) => {
+      const aOverdue = isNoticeOverdue(a, businessDate);
+      const bOverdue = isNoticeOverdue(b, businessDate);
+      if (aOverdue !== bOverdue) return aOverdue ? -1 : 1;
+      if (aOverdue && bOverdue) {
+        return String(noticeDate(a)).localeCompare(String(noticeDate(b)));
+      }
+      return String(a.expiry_date).localeCompare(String(b.expiry_date));
+    });
 
   const providerById = new Map(providers.map((provider) => [provider.id, provider]));
   const exposure = [...providerById.values()]
@@ -109,6 +119,7 @@ export default async function DashboardPage() {
                   <th>Provider</th>
                   <th>Status</th>
                   <th>Expiry date</th>
+                  <th>Notice date</th>
                 </tr>
               </thead>
               <tbody>
@@ -121,6 +132,7 @@ export default async function DashboardPage() {
                       <StatusBadge status={circuit.status} />
                     </td>
                     <td>{circuit.expiry_date}</td>
+                    <NoticeDateCell circuit={circuit} businessDate={businessDate} />
                   </tr>
                 ))}
               </tbody>
