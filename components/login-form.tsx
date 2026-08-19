@@ -1,11 +1,13 @@
 import Link from "next/link";
 import type { ReactElement } from "react";
-import { requestMagicLink, signInWithPassword } from "@/app/login/actions";
+import { beginSignIn, requestMagicLink, signInWithPassword } from "@/app/login/actions";
 
 type LoginFormProps = {
   error?: string;
   notice?: string;
   method?: string;
+  step?: string;
+  email?: string;
 };
 
 const errorMessages: Record<string, string> = {
@@ -17,8 +19,7 @@ const errorMessages: Record<string, string> = {
   "service-unavailable": "Sign-in is temporarily unavailable. Please try again shortly.",
 };
 
-export function LoginForm({ error, notice, method }: LoginFormProps): ReactElement {
-  const passwordMode = method === "password";
+export function LoginForm({ error, notice, method, step, email }: LoginFormProps): ReactElement {
   const errorMessage = error ? errorMessages[error] : undefined;
 
   return (
@@ -34,24 +35,7 @@ export function LoginForm({ error, notice, method }: LoginFormProps): ReactEleme
         </p>
       )}
 
-      <nav className="login-modes" aria-label="Sign-in method">
-        <Link
-          aria-current={!passwordMode ? "page" : undefined}
-          className={!passwordMode ? "button button-primary" : "button button-secondary"}
-          href="/login"
-        >
-          Sign-in link
-        </Link>
-        <Link
-          aria-current={passwordMode ? "page" : undefined}
-          className={passwordMode ? "button button-primary" : "button button-secondary"}
-          href="/login?method=password"
-        >
-          Password
-        </Link>
-      </nav>
-
-      {passwordMode ? (
+      {method === "password" ? (
         <form action={signInWithPassword} className="form-stack">
           <label>
             Work email
@@ -65,10 +49,10 @@ export function LoginForm({ error, notice, method }: LoginFormProps): ReactEleme
             Sign in
           </button>
           <p className="muted form-help">
-            No password? <Link href="/login">Use the sign-in link instead</Link>.
+            No password? <Link href="/login?method=link">Use the sign-in link instead</Link>.
           </p>
         </form>
-      ) : (
+      ) : method === "link" ? (
         <form action={requestMagicLink} className="form-stack">
           <label>
             Work email
@@ -85,6 +69,49 @@ export function LoginForm({ error, notice, method }: LoginFormProps): ReactEleme
           </button>
           <p className="muted form-help">
             We&apos;ll email you a one-time link. It expires after one hour.
+          </p>
+        </form>
+      ) : step === "password" && email ? (
+        <>
+          <p className="muted form-help">
+            Signing in as <strong>{email}</strong>.{" "}
+            <Link href="/login">Not you? Use a different email</Link>.
+          </p>
+          <form action={signInWithPassword} className="form-stack">
+            <input type="hidden" name="step" value="password" />
+            <input type="hidden" name="email" value={email} />
+            <label>
+              Password
+              <input autoComplete="current-password" name="password" required type="password" />
+            </label>
+            <button className="button button-primary" type="submit">
+              Sign in
+            </button>
+          </form>
+          <form action={requestMagicLink} className="form-stack">
+            <input type="hidden" name="email" value={email} />
+            <button className="button button-secondary" type="submit">
+              Email me a sign-in link instead
+            </button>
+          </form>
+        </>
+      ) : (
+        <form action={beginSignIn} className="form-stack">
+          <label>
+            Work email
+            <input
+              autoComplete="email"
+              name="email"
+              placeholder="you@bscplc.com.bd"
+              required
+              type="email"
+            />
+          </label>
+          <button className="button button-primary" type="submit">
+            Continue
+          </button>
+          <p className="muted form-help">
+            We&apos;ll check your account and either send a sign-in link or ask for your password.
           </p>
         </form>
       )}
