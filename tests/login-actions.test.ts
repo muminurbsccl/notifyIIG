@@ -324,6 +324,32 @@ describe("server login actions", () => {
       );
       expect(mocks.createClient).not.toHaveBeenCalled();
     });
+
+    it("maps GoTrue otp_disabled to the same link-sent state as a passwordless account", async () => {
+      mocks.rpc.mockResolvedValue({ data: false, error: null });
+      mocks.signInWithOtp.mockResolvedValue({
+        data: {},
+        error: { code: "otp_disabled", status: 422, message: "Signups not allowed for otp" },
+      });
+
+      await expectRedirect(
+        beginSignIn(formData({ email: "unknown@example.com" })),
+        "/login?notice=link-sent",
+      );
+    });
+
+    it("maps a non-otp_disabled magic-link provider error to service unavailable", async () => {
+      mocks.rpc.mockResolvedValue({ data: false, error: null });
+      mocks.signInWithOtp.mockResolvedValue({
+        data: {},
+        error: { code: "email_provider_disabled", status: 400, message: "provider secret detail" },
+      });
+
+      await expectRedirect(
+        beginSignIn(formData({ email: "person@example.com" })),
+        "/login?error=service-unavailable",
+      );
+    });
   });
 
   describe("signInWithPassword (password step)", () => {

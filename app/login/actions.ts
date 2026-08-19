@@ -96,7 +96,9 @@ export async function beginSignIn(formData: FormData): Promise<void> {
       destination = otpError
         ? isRateLimited(otpError)
           ? "/login?error=rate-limited"
-          : serviceErrorDestination("")
+          : otpError.code === "otp_disabled"
+            ? "/login?notice=link-sent"
+            : serviceErrorDestination("")
         : "/login?notice=link-sent";
     }
   } catch (cause) {
