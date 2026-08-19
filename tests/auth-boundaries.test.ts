@@ -24,7 +24,8 @@ describe("authentication boundary artifacts", () => {
     expect(middleware).toContain('"/robots.txt"');
     expect(middleware).toContain('"/icon.png"');
     expect(middleware).toContain('"/apple-icon.png"');
-    expect(middleware).toContain("middlewareBypassPaths.includes(pathname)");
+    expect(middleware).toContain('"/brand"');
+    expect(middleware).toContain("middlewareBypassPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`))");
   });
 
   it("distinguishes auth service errors from invalid sessions", () => {

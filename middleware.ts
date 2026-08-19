@@ -12,11 +12,15 @@ const middlewareBypassPaths = [
   "/icon.png",
   "/apple-icon",
   "/apple-icon.png",
+  "/brand",
 ];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if (pathname.startsWith("/_next/") || middlewareBypassPaths.includes(pathname)) {
+  const isBypassed =
+    pathname.startsWith("/_next/") ||
+    middlewareBypassPaths.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+  if (isBypassed) {
     return NextResponse.next();
   }
 

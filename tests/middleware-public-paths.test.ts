@@ -35,6 +35,9 @@ describe("middleware metadata route bypass", () => {
     "/icon.png",
     "/apple-icon",
     "/apple-icon.png",
+    "/brand",
+    "/brand/bscplc-logo.jpg",
+    "/brand/bscplc-logo.jpg?w=640",
   ])("lets %s reach its route handler without session middleware", async (pathname) => {
     const response = await middleware(
       new NextRequest(`https://notifyiig.vercel.app${pathname}`),
