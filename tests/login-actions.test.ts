@@ -243,7 +243,7 @@ describe("server login actions", () => {
       expect(mocks.createClient).toHaveBeenCalledWith(
         "https://xyz.supabase.co",
         "svc-key",
-        { auth: { persistSession: false } },
+        { auth: { autoRefreshToken: false, persistSession: false } },
       );
       expect(mocks.rpc).toHaveBeenCalledWith("auth_user_has_password", {
         email: "person@example.com",

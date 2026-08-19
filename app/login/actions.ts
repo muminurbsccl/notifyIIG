@@ -1,6 +1,5 @@
 "use server";
 
-import { createClient } from "@supabase/supabase-js";
 import { redirect } from "next/navigation";
 import { getAuthContext } from "@/lib/auth";
 import {
@@ -10,6 +9,7 @@ import {
   validatedAppBaseUrl,
 } from "@/lib/auth-flow";
 import { getServerConfig } from "@/lib/server-config";
+import { createServiceSupabaseClient } from "@/lib/supabase/service";
 import { createWritableServerSupabaseClient } from "@/lib/supabase/server";
 
 function isInvalidInput(cause: unknown): boolean {
@@ -30,16 +30,6 @@ function isInvalidCredentials(error: unknown): boolean {
 
 function serviceErrorDestination(method: string): string {
   return `/login?error=service-unavailable${method ? `&method=${method}` : ""}`;
-}
-
-function createServiceRoleClient() {
-  const { supabaseUrl, serviceRoleKey } = getServerConfig();
-  if (!supabaseUrl || !serviceRoleKey) {
-    throw new Error("service configuration is missing");
-  }
-  return createClient(supabaseUrl, serviceRoleKey, {
-    auth: { persistSession: false },
-  });
 }
 
 export async function requestMagicLink(formData: FormData): Promise<void> {
@@ -74,7 +64,7 @@ export async function beginSignIn(formData: FormData): Promise<void> {
   let destination: string;
   try {
     const email = requireEmail(formData.get("email"));
-    const { data, error } = await createServiceRoleClient().rpc(
+    const { data, error } = await createServiceSupabaseClient().rpc(
       "auth_user_has_password",
       { email },
     );
