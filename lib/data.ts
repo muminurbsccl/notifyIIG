@@ -37,6 +37,7 @@ export type CircuitRecord = {
   monthly_cost: number | null;
   currency: string | null;
   notes: string | null;
+  renewal_procedure_start_date: string | null;
   notification_enabled: boolean;
   notification_rule_id: string | null;
   verified_at: string | null;
