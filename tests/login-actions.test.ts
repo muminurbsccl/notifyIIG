@@ -95,6 +95,30 @@ describe("server login actions", () => {
     expect(mocks.redirect).not.toHaveBeenCalledWith(expect.stringContaining("provider"));
   });
 
+  it("maps a magic-link email rate limit to a dedicated state", async () => {
+    mocks.signInWithOtp.mockResolvedValue({
+      data: {},
+      error: { code: "over_email_send_rate_limit", status: 429, message: "email rate limit exceeded" },
+    });
+
+    await expectRedirect(
+      requestMagicLink(formData({ email: "person@example.com" })),
+      "/login?error=rate-limited",
+    );
+  });
+
+  it("maps a password rate limit to a dedicated state", async () => {
+    mocks.signInWithPassword.mockResolvedValue({
+      data: { user: null, session: null },
+      error: { code: "over_request_rate_limit", status: 429, message: "too many requests" },
+    });
+
+    await expectRedirect(
+      signInWithPassword(formData({ email: "person@example.com", password: "bad" })),
+      "/login?error=rate-limited&method=password",
+    );
+  });
+
   it("maps invalid password credentials without reflecting provider details", async () => {
     mocks.signInWithPassword.mockResolvedValue({
       data: { user: null, session: null },

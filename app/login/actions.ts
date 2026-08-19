@@ -15,9 +15,20 @@ function isInvalidInput(cause: unknown): boolean {
   return cause instanceof Error && cause.message === "invalid-input";
 }
 
+function isRateLimited(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const status = (error as { status?: unknown }).status;
+  const code = (error as { code?: unknown }).code;
+  return status === 429 || code === "over_email_send_rate_limit" || code === "over_request_rate_limit";
+}
+
 function isInvalidCredentials(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   return (error as { code?: string }).code === "invalid_credentials";
+}
+
+function serviceErrorDestination(method: string): string {
+  return `/login?error=service-unavailable${method ? `&method=${method}` : ""}`;
 }
 
 export async function requestMagicLink(formData: FormData): Promise<void> {
@@ -34,12 +45,16 @@ export async function requestMagicLink(formData: FormData): Promise<void> {
       },
     });
     destination = error
-      ? "/login?error=service-unavailable"
+      ? isRateLimited(error)
+        ? "/login?error=rate-limited"
+        : serviceErrorDestination("")
       : "/login?notice=link-sent";
   } catch (cause) {
     destination = isInvalidInput(cause)
       ? "/login?error=invalid-input"
-      : "/login?error=service-unavailable";
+      : isRateLimited(cause)
+        ? "/login?error=rate-limited"
+        : serviceErrorDestination("");
   }
   redirect(destination);
 }
@@ -55,7 +70,9 @@ export async function signInWithPassword(formData: FormData): Promise<void> {
     if (error) {
       destination = isInvalidCredentials(error)
         ? "/login?error=invalid-credentials&method=password"
-        : "/login?error=service-unavailable&method=password";
+        : isRateLimited(error)
+          ? "/login?error=rate-limited&method=password"
+          : serviceErrorDestination("password");
     } else {
       const context = await getAuthContext(supabase);
       if (context) {

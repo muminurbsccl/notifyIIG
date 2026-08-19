@@ -13,6 +13,7 @@ const errorMessages: Record<string, string> = {
   "invalid-credentials": "The email or password was not accepted.",
   "not-authorized": "Your account is not active. Contact a system administrator.",
   "invalid-link": "This sign-in link is invalid or expired. Request a new one below.",
+  "rate-limited": "Too many sign-in attempts were made. Please wait about an hour, then request a new sign-in link.",
   "service-unavailable": "Sign-in is temporarily unavailable. Please try again shortly.",
 };
 
