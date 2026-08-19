@@ -23,7 +23,7 @@ export function AppShell({ children, userLabel, role, setupWarning = null }: App
   return (
     <div className="app-frame">
       <aside className="sidebar" aria-label="Primary navigation">
-        <Link className="sidebar-brand" href="/dashboard" aria-label="BSCPLC dashboard">
+        <Link className="sidebar-brand" href="/dashboard" aria-label="BSCPLC IPT NotifySystem dashboard">
           <BrandLogo compact />
         </Link>
         <nav className="nav-list">
@@ -47,8 +47,8 @@ export function AppShell({ children, userLabel, role, setupWarning = null }: App
       <div className="app-content">
         <header className="topbar">
           <div>
-            <p className="eyebrow">BSCPLC operations</p>
-            <p className="topbar-title">Circuit expiry notification system</p>
+            <p className="eyebrow">BSCPLC IPT NotifySystem</p>
+            <p className="topbar-title">Notification system for service renewal</p>
           </div>
           <div className="user-chip" aria-label={`Signed in as ${userLabel}, ${role}`}>
             <span className="avatar" aria-hidden="true">

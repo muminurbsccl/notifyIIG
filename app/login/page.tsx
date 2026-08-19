@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   openGraph: {
     ...PUBLIC_OPEN_GRAPH,
     url: "/login",
-    title: "Sign in | BSCPLC Circuit Notifications",
+    title: "Sign in | BSCPLC IPT NotifySystem",
   },
 };
 
@@ -27,7 +27,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       <section className="setup-card login-card" aria-labelledby="login-title">
         <BrandLogo />
         <p className="eyebrow">Invitation-only access</p>
-        <h1 id="login-title">Sign in to circuit operations</h1>
+        <h1 id="login-title">BSCPLC IPT NotifySystem</h1>
+        <p className="muted">Notification system for service renewal</p>
         {!configured ? (
           <div className="notice notice-warning">
             Supabase is not configured for this deployment. <Link href="/setup">Open setup guidance</Link>.

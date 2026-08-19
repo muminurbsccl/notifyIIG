@@ -5,10 +5,10 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://notifyiig.vercel.app"),
-  applicationName: "BSCPLC Circuit Notifications",
+  applicationName: "BSCPLC IPT NotifySystem",
   title: {
-    default: "BSCPLC Circuit Notifications",
-    template: "%s | BSCPLC Circuit Notifications",
+    default: "BSCPLC IPT NotifySystem",
+    template: "%s | BSCPLC IPT NotifySystem",
   },
   description: PUBLIC_DESCRIPTION,
   icons: {
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   openGraph: PUBLIC_OPEN_GRAPH,
   twitter: {
     card: "summary",
-    title: "BSCPLC Circuit Notifications",
+    title: "BSCPLC IPT NotifySystem",
     description: PUBLIC_DESCRIPTION,
   },
 };
