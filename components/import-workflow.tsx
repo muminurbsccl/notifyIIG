@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
 
 type ImportIssue = {
@@ -12,15 +12,14 @@ type ImportIssue = {
 };
 
 type PreviewResponse = {
-  providers: { name: string; code: string; source: { sheetName: string; rowNumber: number } }[];
+  providers: { name: string; code: string; sources: { sheetName: string; rowNumber: number }[] }[];
   circuitCandidates: {
     providerName: string;
     externalCircuitId: string;
     identifierType: string;
-    source: { sheetName: string; rowNumber: number };
+    sources: { sheetName: string; rowNumber: number }[];
     duplicate?: boolean;
   }[];
-  invoiceReferences: { providerName: string; referenceNumber: string; source: { sheetName: string; rowNumber: number } }[];
   issues: ImportIssue[];
   filename: string;
   checksum: string;
@@ -38,6 +37,29 @@ type CommitCounts = {
 };
 
 const DECISION_OPTIONS = ["skip", "merge", "create"] as const;
+
+export function ImportReviewSummary({ preview }: { preview: PreviewResponse }): ReactElement {
+  return (
+    <>
+      <p className="eyebrow">Review before commit</p>
+      <h2 className="section-heading">{preview.filename}</h2>
+      <dl className="detail-grid">
+        <div>
+          <dt>Providers</dt>
+          <dd>{preview.providers.length}</dd>
+        </div>
+        <div>
+          <dt>Circuit candidates</dt>
+          <dd>{preview.circuitCandidates.length}</dd>
+        </div>
+        <div>
+          <dt>Sheets</dt>
+          <dd>{preview.sheetNames.join(", ")}</dd>
+        </div>
+      </dl>
+    </>
+  );
+}
 
 export function ImportWorkflow() {
   const router = useRouter();
@@ -183,26 +205,7 @@ export function ImportWorkflow() {
         </form>
       ) : (
         <>
-          <p className="eyebrow">Review before commit</p>
-          <h2 className="section-heading">{preview.filename}</h2>
-          <dl className="detail-grid">
-            <div>
-              <dt>Providers</dt>
-              <dd>{preview.providers.length}</dd>
-            </div>
-            <div>
-              <dt>Circuit candidates</dt>
-              <dd>{preview.circuitCandidates.length}</dd>
-            </div>
-            <div>
-              <dt>Invoice references</dt>
-              <dd>{preview.invoiceReferences.length}</dd>
-            </div>
-            <div>
-              <dt>Sheets</dt>
-              <dd>{preview.sheetNames.join(", ")}</dd>
-            </div>
-          </dl>
+          <ImportReviewSummary preview={preview} />
 
           {preview.circuitCandidates.length === 0 && (
             <p className="notice notice-warning stack-gap">
