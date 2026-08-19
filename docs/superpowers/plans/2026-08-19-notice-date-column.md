@@ -26,6 +26,7 @@
 
 **Files:**
 - Create: `lib/domain/notice-date.ts`
+- Modify: `lib/data.ts` (add `renewal_procedure_start_date: string | null;` to the `CircuitRecord` type, after `notes`)
 - Test: `tests/notice-date.test.ts`
 
 **Interfaces:**
@@ -145,15 +146,25 @@ export function isNoticeOverdue(circuit: NoticeDateCircuit, businessDate: string
 }
 ```
 
+Also add the missing field to `CircuitRecord` in `lib/data.ts` so the pages
+can pass circuit rows to `NoticeDateCircuit` (runtime data already includes
+it via `select("*")`; this is type-only):
+
+```ts
+  notes: string | null;
+  renewal_procedure_start_date: string | null;
+  notification_enabled: boolean;
+```
+
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run tests/notice-date.test.ts`
-Expected: PASS — 8 tests.
+Expected: PASS — 8 tests. Then run `npm run typecheck` — expected: no errors.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add lib/domain/notice-date.ts tests/notice-date.test.ts
+git add lib/domain/notice-date.ts lib/data.ts tests/notice-date.test.ts
 git commit -m "feat(notice): add notice-date and overdue helpers with tests"
 ```
 
