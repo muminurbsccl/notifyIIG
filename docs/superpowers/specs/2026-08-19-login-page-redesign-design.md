@@ -52,7 +52,7 @@ The page also looks utilitarian: a single centered card with no product identity
 - Shows the email (muted, read-only) with "Not you? Use a different email" linking to `/login`.
 - Password field + submit "Sign in" → existing `signInWithPassword` action; the form includes a hidden `step=password` input and hidden `email`.
 - `signInWithPassword` change: when the form carries `step=password`, error redirects preserve the step and email — `?step=password&email=<encoded>&error=…` (invalid-input, invalid-credentials, rate-limited, service-unavailable, not-authorized). Success → `/dashboard` (unchanged). Without `step` (combined form), error redirects are unchanged (`?error=…&method=password`).
-- Escape hatch: inline form "Trouble signing in? Email me a sign-in link" with hidden email posting to the existing `requestMagicLink` → `?notice=link-sent`.
+- Escape hatch: inline form "Email me a sign-in link instead" with hidden email posting to the existing `requestMagicLink` → `?notice=link-sent`.
 
 **Backward compatibility:**
 - `?method=password` renders today's combined email + password form exactly (same fields, same action, same error destinations). Automation and operator flows keep working.
