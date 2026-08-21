@@ -108,6 +108,18 @@ describe("server login actions", () => {
     expect(mocks.redirect).not.toHaveBeenCalledWith(expect.stringContaining("provider"));
   });
 
+  it("maps an unknown-email otp_disabled response to the link-sent state", async () => {
+    mocks.signInWithOtp.mockResolvedValue({
+      data: {},
+      error: { code: "otp_disabled", status: 422, message: "Signups not allowed for otp" },
+    });
+
+    await expectRedirect(
+      requestMagicLink(formData({ email: "unknown@example.com" })),
+      "/login?notice=link-sent",
+    );
+  });
+
   it("maps a magic-link email rate limit to a dedicated state", async () => {
     mocks.signInWithOtp.mockResolvedValue({
       data: {},

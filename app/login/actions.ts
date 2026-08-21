@@ -46,9 +46,11 @@ export async function requestMagicLink(formData: FormData): Promise<void> {
       },
     });
     destination = error
-      ? isRateLimited(error)
-        ? "/login?error=rate-limited"
-        : serviceErrorDestination("")
+        ? isRateLimited(error)
+          ? "/login?error=rate-limited"
+          : error.code === "otp_disabled"
+            ? "/login?notice=link-sent"
+            : serviceErrorDestination("")
       : "/login?notice=link-sent";
   } catch (cause) {
     destination = isInvalidInput(cause)
