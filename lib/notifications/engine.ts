@@ -2,7 +2,7 @@ import "server-only";
 import { buildMilestones, getDhakaBusinessDate } from "@/lib/domain/date-rules";
 import { buildIdempotencyKey, buildTargetHash } from "@/lib/domain/idempotency";
 import { classifyDeliveryError } from "@/lib/domain/retry";
-import { escapeHtml } from "@/lib/domain/templates";
+import { buildExpiryEmail } from "@/lib/domain/notification-email";
 import { dispatchChannel } from "@/lib/integrations/index";
 import { getServerConfig } from "@/lib/server-config";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
@@ -291,12 +291,15 @@ function buildDispatchInput(
   config: ReturnType<typeof getServerConfig>,
 ) {
   if (context.channel === "email") {
+    const email = buildExpiryEmail({
+      circuitId: context.externalCircuitId,
+      expiryDate: context.expiryDate,
+      milestoneLabel: context.milestoneLabel,
+    });
     return {
       channel: "email" as const,
       to: [context.target],
-      subject: `Circuit ${context.externalCircuitId} expires ${context.expiryDate}`,
-      bodyHtml: `<p>Circuit <b>${escapeHtml(context.externalCircuitId)}</b> expires on ${context.expiryDate}.</p><p>${escapeHtml(context.milestoneLabel)}</p>`,
-      bodyText: `Circuit ${context.externalCircuitId} expires on ${context.expiryDate}. ${context.milestoneLabel}`,
+      ...email,
     };
   }
   if (context.channel === "whatsapp") {
