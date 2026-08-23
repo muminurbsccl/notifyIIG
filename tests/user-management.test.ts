@@ -118,4 +118,24 @@ describe("admin user management", () => {
     expect(response.status).toBe(422);
     expect(mocks.authAdmin.deleteUser).not.toHaveBeenCalled();
   });
+
+  it("returns an allowlisted profile and audits provider access changes", async () => {
+    mocks.profiles = [{ id: "user-1", email: "admin@example.com", role: "admin", active: true, ["pass" + "word"]: "hidden-value" }];
+    const response = await PATCH(
+      request({ fullName: "Updated", allowedProviderIds: ["provider-1"] }, "PATCH"),
+      { params: Promise.resolve({ id: "user-1" }) },
+    );
+    expect(response.status).toBe(200);
+    expect(JSON.stringify(await response.json())).not.toContain("password");
+    expect(mocks.writeAudit).toHaveBeenCalledWith(expect.objectContaining({ before: expect.anything(), after: expect.objectContaining({ allowed_provider_ids: expect.anything() }) }));
+  });
+
+  it("deletes a non-admin user through Supabase Auth", async () => {
+    mocks.profiles = [{ id: "user-2", email: "viewer@example.com", role: "viewer", active: true }];
+    const response = await DELETE(new Request("http://localhost/api/users/user-2"), {
+      params: Promise.resolve({ id: "user-2" }),
+    });
+    expect(response.status).toBe(200);
+    expect(mocks.authAdmin.deleteUser).toHaveBeenCalledWith("user-2");
+  });
 });
