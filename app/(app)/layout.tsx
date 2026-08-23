@@ -21,7 +21,7 @@ export default async function AppLayout({ children }: Readonly<{ children: React
   const auth = await requireProfile();
   const userLabel = auth.profile.full_name || auth.profile.email || "User";
   return (
-    <AppShell setupWarning={buildSetupWarning()} userLabel={userLabel} role={auth.profile.role}>
+      <AppShell isAdmin={auth.profile.role === "admin"} setupWarning={buildSetupWarning()} userLabel={userLabel} role={auth.profile.role}>
       {children}
     </AppShell>
   );

@@ -72,9 +72,9 @@ beforeEach(() => {
 
 describe("admin user management", () => {
   it("rejects non-admin access", async () => {
-    mocks.requireApiProfile.mockRejectedValue(new Error("forbidden"));
+    mocks.requireApiProfile.mockRejectedValue(new MockAuthError("forbidden"));
     const response = await GET(new Request("http://localhost/api/users"));
-    expect(response.status).toBe(500);
+    expect(response.status).toBe(403);
   });
 
   it("creates an invited user without returning password data", async () => {
@@ -96,6 +96,14 @@ describe("admin user management", () => {
   it("does not allow deleting the current administrator", async () => {
     const response = await DELETE(new Request("http://localhost/api/users/user-1"), {
       params: Promise.resolve({ id: "actor-1" }),
+    });
+    expect(response.status).toBe(422);
+    expect(mocks.authAdmin.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("rejects deleting the last active administrator", async () => {
+    const response = await DELETE(new Request("http://localhost/api/users/user-1"), {
+      params: Promise.resolve({ id: "user-1" }),
     });
     expect(response.status).toBe(422);
     expect(mocks.authAdmin.deleteUser).not.toHaveBeenCalled();

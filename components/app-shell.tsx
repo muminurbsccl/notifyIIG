@@ -6,6 +6,7 @@ type AppShellProps = {
   children: ReactNode;
   userLabel: string;
   role: string;
+  isAdmin?: boolean;
   setupWarning?: string | null;
 };
 
@@ -20,7 +21,7 @@ const navigation = [
   ["Audit log", "/audit"],
 ] as const;
 
-export function AppShell({ children, userLabel, role, setupWarning = null }: AppShellProps): ReactElement {
+export function AppShell({ children, userLabel, role, isAdmin = false, setupWarning = null }: AppShellProps): ReactElement {
   return (
     <div className="app-frame">
       <aside className="sidebar" aria-label="Primary navigation">
@@ -28,7 +29,7 @@ export function AppShell({ children, userLabel, role, setupWarning = null }: App
           <BrandLogo compact />
         </Link>
         <nav className="nav-list">
-          {navigation.map(([label, href]) => (
+          {navigation.filter(([, href]) => href !== "/users" || isAdmin).map(([label, href]) => (
             <Link aria-label={label} className="nav-link" href={href} key={href}>
               <span aria-hidden="true" className="nav-dot" />
               <span className="nav-label">{label}</span>

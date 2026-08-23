@@ -5,6 +5,17 @@ import { jsonError, jsonNotFound, InputError } from "@/lib/http";
 import { writeAudit } from "@/lib/audit";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
 
+function safeProfile(profile: Record<string, unknown>) {
+  return {
+    id: profile.id,
+    email: profile.email ?? null,
+    full_name: profile.full_name ?? "",
+    role: profile.role,
+    active: profile.active === true,
+    allowed_provider_ids: Array.isArray(profile.allowed_provider_ids) ? profile.allowed_provider_ids : [],
+  };
+}
+
 type Context = { params: Promise<{ id: string }> };
 
 function roleOf(value: unknown) {
@@ -44,10 +55,13 @@ export async function PATCH(request: Request, context: Context) {
     if (password) authUpdate.password = password;
     const { error: authError } = await service.auth.admin.updateUserById(id, authUpdate);
     if (authError) throw authError;
-    const { data: profile, error: profileError } = await service.from("profiles").update({ email: email ?? existing.email, full_name: fullName, role: nextRole, active: nextActive, ...(Array.isArray(body.allowedProviderIds) ? { allowed_provider_ids: body.allowedProviderIds } : {}) }).eq("id", id).select().single();
+    const allowedProviderIds = Array.isArray(body.allowedProviderIds)
+      ? body.allowedProviderIds.filter((value): value is string => typeof value === "string")
+      : undefined;
+    const { data: profile, error: profileError } = await service.from("profiles").update({ email: email ?? existing.email, full_name: fullName, role: nextRole, active: nextActive, ...(allowedProviderIds ? { allowed_provider_ids: allowedProviderIds } : {}) }).eq("id", id).select().single();
     if (profileError) throw profileError;
-    await writeAudit({ actorUserId: actor.user.id, action: "user.update", entityType: "profile", entityId: id, after: { email: email ?? existing.email, fullName, role: nextRole, active: nextActive, passwordChanged: Boolean(password) }, requestId: request.headers.get("x-request-id") });
-    return NextResponse.json({ user: profile });
+    await writeAudit({ actorUserId: actor.user.id, action: "user.update", entityType: "profile", entityId: id, after: { ...safeProfile(profile), passwordChanged: Boolean(password) }, requestId: request.headers.get("x-request-id") });
+    return NextResponse.json({ user: safeProfile(profile) });
   } catch (cause) {
     return jsonError(cause);
   }

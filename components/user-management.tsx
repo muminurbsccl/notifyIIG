@@ -20,6 +20,10 @@ export function UserManagement() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [result, setResult] = useState("");
+  const [editing, setEditing] = useState<User | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editPassword, setEditPassword] = useState("");
 
   async function load() {
     const response = await fetch("/api/users");
@@ -79,6 +83,34 @@ export function UserManagement() {
     else await load();
   }
 
+  function beginEdit(user: User) {
+    setEditing(user);
+    setEditName(user.full_name);
+    setEditEmail(user.email ?? "");
+    setEditPassword("");
+  }
+
+  async function saveEdit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!editing) return;
+    const response = await fetch(`/api/users/${editing.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ fullName: editName, email: editEmail, ...(editPassword ? { password: editPassword } : {}) }),
+    });
+    const body = await response.json();
+    if (!response.ok) setError(body.error?.message ?? "User could not be updated");
+    else { setEditing(null); setResult("User updated successfully"); await load(); }
+  }
+
+  async function remove(user: User) {
+    if (!window.confirm(`Delete ${user.email ?? "this user"}? This cannot be undone.`)) return;
+    const response = await fetch(`/api/users/${user.id}`, { method: "DELETE" });
+    const body = await response.json();
+    if (!response.ok) setError(body.error?.message ?? "User could not be deleted");
+    else { setResult("User deleted successfully"); await load(); }
+  }
+
   return (
     <>
       <div className="data-card">
@@ -106,10 +138,19 @@ export function UserManagement() {
             <td>{user.email ?? "—"}</td><td>{user.full_name || "—"}</td>
             <td><select aria-label={`Role for ${user.email}`} value={user.role} onChange={(event) => changeRole(user, event.target.value)}>{ROLES.map((value) => <option key={value}>{value}</option>)}</select></td>
             <td>{user.active ? "Active" : "Inactive"}</td>
-            <td><button className="button button-secondary" type="button" onClick={() => toggle(user)}>{user.active ? "Deactivate" : "Activate"}</button></td>
+            <td><div className="form-actions"><button className="button button-secondary" type="button" onClick={() => beginEdit(user)}>Edit</button><button className="button button-secondary" type="button" onClick={() => toggle(user)}>{user.active ? "Deactivate" : "Activate"}</button><button className="button button-secondary" type="button" onClick={() => remove(user)}>Delete</button></div></td>
           </tr>)}</tbody>
         </table>
       </div>
+      {editing && <div className="data-card stack-gap">
+        <h2 className="section-heading">Edit {editing.email}</h2>
+        <form className="form-stack" onSubmit={saveEdit}>
+          <label>Full name<input value={editName} onChange={(event) => setEditName(event.target.value)} /></label>
+          <label>Email<input required type="email" value={editEmail} onChange={(event) => setEditEmail(event.target.value)} /></label>
+          <label>New password (optional)<input minLength={8} type="password" value={editPassword} onChange={(event) => setEditPassword(event.target.value)} /></label>
+          <div className="form-actions"><button className="button button-primary" type="submit">Save user</button><button className="button button-secondary" type="button" onClick={() => setEditing(null)}>Cancel</button></div>
+        </form>
+      </div>}
     </>
   );
 }
