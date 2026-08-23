@@ -42,14 +42,16 @@ export async function GET(_request: Request) {
   try {
     await requireApiProfile(["admin"]);
     const service = createServiceSupabaseClient();
-    const [{ data: profiles, error: profileError }, { data: authUsers, error: authError }] = await Promise.all([
+    const [{ data: profiles, error: profileError }, { data: authUsers, error: authError }, { data: providers, error: providerError }] = await Promise.all([
       service.from("profiles").select("id,email,full_name,role,active,allowed_provider_ids,created_at,last_login_at"),
       service.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+      service.from("providers").select("id,name,code").eq("active", true).order("name"),
     ]);
     if (profileError) throw profileError;
     if (authError) throw authError;
+    if (providerError) throw providerError;
     const lastSignIn = new Map((authUsers.users ?? []).map((user) => [user.id, user.last_sign_in_at ?? null]));
-    return NextResponse.json({ users: (profiles ?? []).map((profile) => ({ ...safeProfile(profile), last_login_at: lastSignIn.get(String(profile.id)) ?? profile.last_login_at ?? null })) });
+    return NextResponse.json({ users: (profiles ?? []).map((profile) => ({ ...safeProfile(profile), last_login_at: lastSignIn.get(String(profile.id)) ?? profile.last_login_at ?? null })), providers: providers ?? [] });
   } catch (cause) {
     return jsonError(cause);
   }

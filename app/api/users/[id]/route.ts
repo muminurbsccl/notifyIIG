@@ -53,14 +53,17 @@ export async function PATCH(request: Request, context: Context) {
     const authUpdate: Record<string, unknown> = { user_metadata: { full_name: fullName } };
     if (email) authUpdate.email = email;
     if (password) authUpdate.password = password;
-    const { error: authError } = await service.auth.admin.updateUserById(id, authUpdate);
-    if (authError) throw authError;
     const allowedProviderIds = Array.isArray(body.allowedProviderIds)
       ? body.allowedProviderIds.filter((value): value is string => typeof value === "string")
       : undefined;
     const { data: profile, error: profileError } = await service.from("profiles").update({ email: email ?? existing.email, full_name: fullName, role: nextRole, active: nextActive, ...(allowedProviderIds ? { allowed_provider_ids: allowedProviderIds } : {}) }).eq("id", id).select().single();
     if (profileError) throw profileError;
-    await writeAudit({ actorUserId: actor.user.id, action: "user.update", entityType: "profile", entityId: id, after: { ...safeProfile(profile), passwordChanged: Boolean(password) }, requestId: request.headers.get("x-request-id") });
+    const { error: authError } = await service.auth.admin.updateUserById(id, authUpdate);
+    if (authError) {
+      await service.from("profiles").update(existing).eq("id", id);
+      throw authError;
+    }
+    await writeAudit({ actorUserId: actor.user.id, action: "user.update", entityType: "profile", entityId: id, before: safeProfile(existing), after: { ...safeProfile(profile), passwordChanged: Boolean(password) }, requestId: request.headers.get("x-request-id") });
     return NextResponse.json({ user: safeProfile(profile) });
   } catch (cause) {
     return jsonError(cause);

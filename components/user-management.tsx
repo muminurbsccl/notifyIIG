@@ -8,12 +8,16 @@ type User = {
   full_name: string;
   role: string;
   active: boolean;
+  allowed_provider_ids?: string[];
 };
+
+type Provider = { id: string; name: string; code: string };
 
 const ROLES = ["admin", "provider_manager", "operations_editor", "auditor", "viewer"];
 
 export function UserManagement() {
   const [users, setUsers] = useState<User[]>([]);
+  const [providers, setProviders] = useState<Provider[]>([]);
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState("viewer");
@@ -24,12 +28,14 @@ export function UserManagement() {
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editPassword, setEditPassword] = useState("");
+  const [editProviders, setEditProviders] = useState<string[]>([]);
 
   async function load() {
     const response = await fetch("/api/users");
     const body = await response.json();
     if (!response.ok) throw new Error(body.error?.message ?? "Users could not be loaded");
     setUsers(body.users ?? []);
+    setProviders(body.providers ?? []);
   }
 
   useEffect(() => {
@@ -88,6 +94,7 @@ export function UserManagement() {
     setEditName(user.full_name);
     setEditEmail(user.email ?? "");
     setEditPassword("");
+    setEditProviders(user.allowed_provider_ids ?? []);
   }
 
   async function saveEdit(event: React.FormEvent<HTMLFormElement>) {
@@ -96,7 +103,7 @@ export function UserManagement() {
     const response = await fetch(`/api/users/${editing.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ fullName: editName, email: editEmail, ...(editPassword ? { password: editPassword } : {}) }),
+      body: JSON.stringify({ fullName: editName, email: editEmail, allowedProviderIds: editProviders, ...(editPassword ? { password: editPassword } : {}) }),
     });
     const body = await response.json();
     if (!response.ok) setError(body.error?.message ?? "User could not be updated");
@@ -148,6 +155,7 @@ export function UserManagement() {
           <label>Full name<input value={editName} onChange={(event) => setEditName(event.target.value)} /></label>
           <label>Email<input required type="email" value={editEmail} onChange={(event) => setEditEmail(event.target.value)} /></label>
           <label>New password (optional)<input minLength={8} type="password" value={editPassword} onChange={(event) => setEditPassword(event.target.value)} /></label>
+          {providers.length > 0 && <fieldset><legend>Provider access</legend>{providers.map((provider) => <label className="form-check" key={provider.id}><input checked={editProviders.includes(provider.id)} type="checkbox" onChange={(event) => setEditProviders((current) => event.target.checked ? [...current, provider.id] : current.filter((id) => id !== provider.id))} /><span>{provider.name} ({provider.code})</span></label>)}</fieldset>}
           <div className="form-actions"><button className="button button-primary" type="submit">Save user</button><button className="button button-secondary" type="button" onClick={() => setEditing(null)}>Cancel</button></div>
         </form>
       </div>}
