@@ -3,6 +3,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ProviderForm } from "@/components/provider-form";
 import { requireProfile } from "@/lib/auth";
 import { listProviders } from "@/lib/data";
+import { listActiveProfiles } from "@/lib/admin-profiles";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,7 @@ export default async function ProvidersPage({
   const params = await searchParams;
   const canManage = auth.profile.role === "admin" || auth.profile.role === "operations_editor";
   const providers = await listProviders(auth.supabase, params.search);
+  const profiles = canManage ? await listActiveProfiles() : [];
 
   return (
     <>
@@ -82,7 +84,7 @@ export default async function ProvidersPage({
       {canManage && (
         <div className="data-card stack-gap">
           <h2 className="section-heading">Register a provider</h2>
-          <ProviderForm submitLabel="Save provider" />
+          <ProviderForm profiles={profiles} submitLabel="Save provider" />
         </div>
       )}
     </>

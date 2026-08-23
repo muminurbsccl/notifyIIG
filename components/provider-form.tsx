@@ -12,11 +12,13 @@ export type ProviderFormInitial = {
   backupOwnerUserId?: string | null;
   notes?: string | null;
 };
+export type ProviderFormProfile = { id: string; email: string | null; full_name: string; role: string };
 
 type ProviderFormProps = {
   initial?: ProviderFormInitial;
   providerId?: string;
   submitLabel?: string;
+  profiles?: ProviderFormProfile[];
 };
 
 type FieldErrors = Record<string, string[] | undefined>;
@@ -25,7 +27,7 @@ function optionalText(value: string): string | null {
   return value.trim() === "" ? null : value.trim();
 }
 
-export function ProviderForm({ initial, providerId, submitLabel }: ProviderFormProps) {
+export function ProviderForm({ initial, providerId, submitLabel, profiles = [] }: ProviderFormProps) {
   const router = useRouter();
   const [values, setValues] = useState({
     code: initial?.code ?? "",
@@ -121,7 +123,7 @@ export function ProviderForm({ initial, providerId, submitLabel }: ProviderFormP
         </label>
         <label>
           Primary owner (user ID)
-          <input value={values.primaryOwnerUserId} onChange={(event) => set("primaryOwnerUserId", event.target.value)} />
+            {profiles.length > 0 ? <select value={values.primaryOwnerUserId} onChange={(event) => set("primaryOwnerUserId", event.target.value)}><option value="">Select a user…</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.full_name || profile.email || profile.id} ({profile.role})</option>)}</select> : <input value={values.primaryOwnerUserId} onChange={(event) => set("primaryOwnerUserId", event.target.value)} />}
           {fieldError("primaryOwnerUserId") && (
             <p className="field-error">{fieldError("primaryOwnerUserId")}</p>
           )}
@@ -130,7 +132,7 @@ export function ProviderForm({ initial, providerId, submitLabel }: ProviderFormP
       <div className="form-row">
         <label>
           Backup owner (user ID)
-          <input value={values.backupOwnerUserId} onChange={(event) => set("backupOwnerUserId", event.target.value)} />
+          {profiles.length > 0 ? <select value={values.backupOwnerUserId} onChange={(event) => set("backupOwnerUserId", event.target.value)}><option value="">Select a backup…</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.full_name || profile.email || profile.id} ({profile.role})</option>)}</select> : <input value={values.backupOwnerUserId} onChange={(event) => set("backupOwnerUserId", event.target.value)} />}
         </label>
         <label className="form-check stack-gap">
           <input

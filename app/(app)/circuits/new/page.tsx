@@ -3,12 +3,14 @@ import { CircuitForm } from "@/components/circuit-form";
 import { EmptyState } from "@/components/empty-state";
 import { requireProfile } from "@/lib/auth";
 import { listProviders } from "@/lib/data";
+import { listActiveProfiles } from "@/lib/admin-profiles";
 
 export const dynamic = "force-dynamic";
 
 export default async function NewCircuitPage() {
   const auth = await requireProfile(["admin", "operations_editor"]);
   const providers = await listProviders(auth.supabase);
+  const profiles = await listActiveProfiles();
 
   return (
     <>
@@ -28,6 +30,7 @@ export default async function NewCircuitPage() {
       ) : (
         <CircuitForm
           providers={providers.map((provider) => ({ id: provider.id, name: provider.name, code: provider.code }))}
+          profiles={profiles}
           submitLabel="Save circuit"
         />
       )}

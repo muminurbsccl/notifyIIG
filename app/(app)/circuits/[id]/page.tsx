@@ -4,6 +4,7 @@ import { CircuitForm } from "@/components/circuit-form";
 import { StatusBadge } from "@/components/status-badge";
 import { requireProfile } from "@/lib/auth";
 import { getCircuit, listProviders } from "@/lib/data";
+import { listActiveProfiles } from "@/lib/admin-profiles";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,7 @@ export default async function CircuitDetailPage({
   if (!circuit) notFound();
 
   const providers = await listProviders(auth.supabase);
+  const profiles = await listActiveProfiles();
   const provider = providers.find((entry) => entry.id === circuit.provider_id);
   const canManage = auth.profile.role === "admin" || auth.profile.role === "operations_editor";
   const isManager = auth.profile.role === "provider_manager";
@@ -137,6 +139,7 @@ export default async function CircuitDetailPage({
             }}
             managerMode={isManager}
             providers={providers.map((entry) => ({ id: entry.id, name: entry.name, code: entry.code }))}
+            profiles={profiles}
             submitLabel="Save changes"
           />
         </div>

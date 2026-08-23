@@ -5,6 +5,7 @@ import { ProviderForm } from "@/components/provider-form";
 import { StatusBadge } from "@/components/status-badge";
 import { requireProfile } from "@/lib/auth";
 import { listCircuits, listProviders } from "@/lib/data";
+import { listActiveProfiles } from "@/lib/admin-profiles";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +22,7 @@ export default async function ProviderDetailPage({
 
   const canManage = auth.profile.role === "admin" || auth.profile.role === "operations_editor";
   const circuits = await listCircuits(auth.supabase, { providerId: id });
+  const profiles = canManage ? await listActiveProfiles() : [];
 
   return (
     <>
@@ -78,6 +80,7 @@ export default async function ProviderDetailPage({
               notes: provider.notes,
             }}
             providerId={provider.id}
+            profiles={profiles}
             submitLabel="Save changes"
           />
         </div>

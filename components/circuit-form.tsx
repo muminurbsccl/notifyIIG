@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { calculateInitialReminder } from "@/lib/domain/date-rules";
 
 export type CircuitFormProvider = { id: string; name: string; code: string };
+export type CircuitFormProfile = { id: string; email: string | null; full_name: string; role: string };
 
 export type CircuitFormInitial = {
   providerId?: string;
@@ -29,6 +30,7 @@ export type CircuitFormInitial = {
 
 type CircuitFormProps = {
   providers: CircuitFormProvider[];
+  profiles?: CircuitFormProfile[];
   initial?: CircuitFormInitial;
   circuitId?: string;
   submitLabel?: string;
@@ -47,6 +49,7 @@ function optionalText(value: string): string | null {
 
 export function CircuitForm({
   providers,
+  profiles = [],
   initial,
   circuitId,
   submitLabel,
@@ -300,15 +303,15 @@ export function CircuitForm({
           />
         </label>
         <label>
-          Responsible officer (user ID)
-          <input value={values.ownerUserId} onChange={(event) => set("ownerUserId", event.target.value)} />
+          Responsible user
+          {profiles.length > 0 ? <select value={values.ownerUserId} onChange={(event) => set("ownerUserId", event.target.value)}><option value="">Select a user…</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.full_name || profile.email || profile.id} ({profile.role})</option>)}</select> : <input value={values.ownerUserId} onChange={(event) => set("ownerUserId", event.target.value)} />}
         </label>
       </div>
 
       <div className="form-row">
         <label>
-          Backup owner (user ID)
-          <input value={values.backupOwnerUserId} onChange={(event) => set("backupOwnerUserId", event.target.value)} />
+          Backup responsible user
+          {profiles.length > 0 ? <select value={values.backupOwnerUserId} onChange={(event) => set("backupOwnerUserId", event.target.value)}><option value="">Select a backup…</option>{profiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.full_name || profile.email || profile.id} ({profile.role})</option>)}</select> : <input value={values.backupOwnerUserId} onChange={(event) => set("backupOwnerUserId", event.target.value)} />}
         </label>
         <label>
           Monthly cost
