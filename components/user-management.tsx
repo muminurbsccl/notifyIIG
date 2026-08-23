@@ -65,6 +65,7 @@ export function UserManagement() {
 
   async function toggle(user: User) {
     setError("");
+    setResult("");
     const response = await fetch(`/api/users/${user.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -79,6 +80,8 @@ export function UserManagement() {
   }
 
   async function changeRole(user: User, nextRole: string) {
+    setError("");
+    setResult("");
     const response = await fetch(`/api/users/${user.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -100,6 +103,8 @@ export function UserManagement() {
   async function saveEdit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editing) return;
+    setError("");
+    setResult("");
     const response = await fetch(`/api/users/${editing.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -112,6 +117,8 @@ export function UserManagement() {
 
   async function remove(user: User) {
     if (!window.confirm(`Delete ${user.email ?? "this user"}? This cannot be undone.`)) return;
+    setError("");
+    setResult("");
     const response = await fetch(`/api/users/${user.id}`, { method: "DELETE" });
     const body = await response.json();
     if (!response.ok) setError(body.error?.message ?? "User could not be deleted");

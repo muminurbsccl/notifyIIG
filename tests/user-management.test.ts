@@ -84,6 +84,16 @@ describe("admin user management", () => {
     expect(JSON.stringify(await response.json())).not.toContain("password");
   });
 
+  it("rolls back Auth creation when the profile update fails", async () => {
+    mocks.createServiceSupabaseClient.mockReturnValue({
+      auth: { admin: mocks.authAdmin },
+      from: () => responseChain(null, { message: "profile failed" }),
+    });
+    const response = await POST(request({ email: "orphan@example.com", fullName: "Orphan", role: "viewer" }));
+    expect(response.status).toBe(500);
+    expect(mocks.authAdmin.deleteUser).toHaveBeenCalledWith("user-2");
+  });
+
   it("rejects deactivating the last active administrator", async () => {
     const response = await PATCH(
       request({ active: false }, "PATCH"),
