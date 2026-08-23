@@ -16,6 +16,7 @@ const navigation = [
   ["Imports", "/imports"],
   ["Notifications", "/notifications"],
   ["Settings", "/settings"],
+  ["Users", "/users"],
   ["Audit log", "/audit"],
 ] as const;
 
