@@ -84,6 +84,12 @@ describe("admin user management", () => {
     expect(JSON.stringify(await response.json())).not.toContain("password");
   });
 
+  it("does not turn a successful user creation into a retryable 500 when audit fails", async () => {
+    mocks.writeAudit.mockRejectedValue(new Error("audit unavailable"));
+    const response = await POST(request({ email: "audited@example.com", fullName: "Audited", role: "viewer" }));
+    expect(response.status).toBe(201);
+  });
+
   it("rolls back Auth creation when the profile update fails", async () => {
     mocks.createServiceSupabaseClient.mockReturnValue({
       auth: { admin: mocks.authAdmin },

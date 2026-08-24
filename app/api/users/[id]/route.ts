@@ -63,7 +63,11 @@ export async function PATCH(request: Request, context: Context) {
       await service.from("profiles").update(existing).eq("id", id);
       throw authError;
     }
-    await writeAudit({ actorUserId: actor.user.id, action: "user.update", entityType: "profile", entityId: id, before: safeProfile(existing), after: { ...safeProfile(profile), passwordChanged: Boolean(password) }, requestId: request.headers.get("x-request-id") });
+    try {
+      await writeAudit({ actorUserId: actor.user.id, action: "user.update", entityType: "profile", entityId: id, before: safeProfile(existing), after: { ...safeProfile(profile), passwordChanged: Boolean(password) }, requestId: request.headers.get("x-request-id") });
+    } catch {
+      // The user mutation succeeded; do not make the client retry and duplicate it.
+    }
     return NextResponse.json({ user: safeProfile(profile) });
   } catch (cause) {
     return jsonError(cause);
@@ -82,7 +86,11 @@ export async function DELETE(request: Request, context: Context) {
     if (existing.role === "admin" && existing.active === true && (await activeAdminCount(service)) <= 1) throw new InputError("LAST_ADMIN", "The last active administrator cannot be deleted", 422);
     const result = await service.auth.admin.deleteUser(id);
     if (result.error) throw result.error;
-    await writeAudit({ actorUserId: actor.user.id, action: "user.delete", entityType: "profile", entityId: id, requestId: request.headers.get("x-request-id") });
+    try {
+      await writeAudit({ actorUserId: actor.user.id, action: "user.delete", entityType: "profile", entityId: id, requestId: request.headers.get("x-request-id") });
+    } catch {
+      // The user mutation succeeded; do not make the client retry and duplicate it.
+    }
     return NextResponse.json({ ok: true });
   } catch (cause) {
     return jsonError(cause);

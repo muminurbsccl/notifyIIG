@@ -76,7 +76,11 @@ export async function POST(request: Request) {
       await service.auth.admin.deleteUser(result.data.user.id);
       throw profileError;
     }
-    await writeAudit({ actorUserId: actor.user.id, action: "user.create", entityType: "profile", entityId: result.data.user.id, after: { email: values.email, fullName: values.fullName, role: values.role, active: values.active }, requestId: request.headers.get("x-request-id") });
+    try {
+      await writeAudit({ actorUserId: actor.user.id, action: "user.create", entityType: "profile", entityId: result.data.user.id, after: { email: values.email, fullName: values.fullName, role: values.role, active: values.active }, requestId: request.headers.get("x-request-id") });
+    } catch {
+      // The user mutation succeeded; do not make the client retry and duplicate it.
+    }
     return NextResponse.json({ user: safeProfile(profile) }, { status: 201 });
   } catch (cause) {
     return jsonError(cause);
