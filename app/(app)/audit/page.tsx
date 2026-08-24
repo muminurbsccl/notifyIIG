@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 const PAGE_SIZE = 200;
 
 export default async function AuditPage() {
-  const auth = await requireProfile();
+  const auth = await requireProfile(["admin", "operations_editor", "auditor"]);
   const { data: entries, error } = await auth.supabase
     .from("audit_logs")
     .select("id,actor_user_id,action,entity_type,entity_id,before_json,after_json,created_at")
