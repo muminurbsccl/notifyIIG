@@ -144,4 +144,22 @@ describe("admin user management", () => {
     expect(response.status).toBe(200);
     expect(mocks.authAdmin.deleteUser).toHaveBeenCalledWith("user-2");
   });
+
+  it("keeps an update successful when update auditing fails", async () => {
+    mocks.writeAudit.mockRejectedValue(new Error("audit unavailable"));
+    const response = await PATCH(
+      request({ fullName: "Updated" }, "PATCH"),
+      { params: Promise.resolve({ id: "user-1" }) },
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it("keeps a deletion successful when deletion auditing fails", async () => {
+    mocks.profiles = [{ id: "user-2", email: "viewer@example.com", role: "viewer", active: true }];
+    mocks.writeAudit.mockRejectedValue(new Error("audit unavailable"));
+    const response = await DELETE(new Request("http://localhost/api/users/user-2"), {
+      params: Promise.resolve({ id: "user-2" }),
+    });
+    expect(response.status).toBe(200);
+  });
 });
