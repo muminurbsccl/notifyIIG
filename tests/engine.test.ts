@@ -282,4 +282,102 @@ describe("notification engine", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  function expiryDayState(expiryDate: string) {
+    const state = baseState();
+    state.circuits[0].expiry_date = expiryDate;
+    state.notification_milestones.push({
+      rule_id: ruleId,
+      milestone_key: "T-0",
+      label: "Expiry-day notification",
+      months_before: null,
+      days_before: 0,
+      enabled: true,
+    });
+    return state;
+  }
+
+  it("creates an expiry-day event on the circuit's expiry date", async () => {
+    const { client, tables } = makeFakeClient(expiryDayState("2026-09-01"));
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ messageId: "email-1" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+    try {
+      const summary = await runExpiryNotificationJob(now, client as never);
+
+      expect(summary.ok).toBe(true);
+      expect(summary.businessDate).toBe("2026-09-01");
+      expect(summary.counts).toMatchObject({
+        circuitsProcessed: 1,
+        eventsUpserted: 1,
+        deliveriesClaimed: 2,
+        sent: 2,
+      });
+      expect(tables.notification_events).toHaveLength(1);
+      expect(tables.notification_events[0]).toMatchObject({
+        circuit_id: circuitId,
+        milestone_key: "T-0",
+        due_date: "2026-09-01",
+        status: "completed",
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("still notifies exactly once when the run happens shortly after expiry", async () => {
+    const { client, tables } = makeFakeClient(expiryDayState("2026-08-30"));
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ messageId: "email-1" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+    try {
+      const summary = await runExpiryNotificationJob(now, client as never);
+
+      expect(summary.counts).toMatchObject({ circuitsProcessed: 1, eventsUpserted: 1 });
+      expect(tables.notification_events[0]).toMatchObject({
+        milestone_key: "T-0",
+        due_date: "2026-08-30",
+      });
+
+      const repeat = await runExpiryNotificationJob(now, client as never);
+      expect(repeat.counts.eventsUpserted).toBe(0);
+      expect(repeat.counts.deliveriesCreated).toBe(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("skips circuits whose expiry is past the grace window", async () => {
+    const { client, tables } = makeFakeClient(expiryDayState("2026-08-20"));
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ messageId: "email-1" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+    try {
+      const summary = await runExpiryNotificationJob(now, client as never);
+
+      expect(summary.counts.circuitsProcessed).toBe(0);
+      expect(summary.counts.eventsUpserted).toBe(0);
+      expect(tables.notification_events).toHaveLength(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

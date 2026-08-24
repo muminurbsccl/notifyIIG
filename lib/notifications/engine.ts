@@ -1,5 +1,5 @@
 import "server-only";
-import { buildMilestones, getDhakaBusinessDate } from "@/lib/domain/date-rules";
+import { buildMilestones, getDhakaBusinessDate, subtractCalendarDays } from "@/lib/domain/date-rules";
 import { buildIdempotencyKey, buildTargetHash } from "@/lib/domain/idempotency";
 import { classifyDeliveryError } from "@/lib/domain/retry";
 import { buildExpiryEmail } from "@/lib/domain/notification-email";
@@ -92,6 +92,9 @@ const CLAIM_BATCH = 100;
 const TERMINAL_DELIVERY_STATUSES = ["sent", "delivered", "permanent_failure", "suppressed"];
 const ELIGIBLE_CIRCUIT_STATUSES = ["active", "renewal_pending", "renewed"];
 const DEFAULT_RULE_CODE = "global-default";
+// Keep expired circuits eligible for this many days so a missed cron run still
+// delivers the expiry-day (T-0) notice exactly once, via event idempotency.
+const EXPIRY_GRACE_DAYS = 7;
 
 function requireData(result: QueryResult, context: string): Row[] {
   if (result.error) throw new Error(`Failed to load ${context}: ${result.error.message}`);
@@ -403,7 +406,8 @@ export async function runExpiryNotificationJob(
 
     for (const circuit of circuits) {
       const expiryDate = asString(circuit.expiry_date);
-      if (!expiryDate || expiryDate < businessDate) continue;
+      const graceCutoff = subtractCalendarDays(businessDate, EXPIRY_GRACE_DAYS);
+      if (!expiryDate || expiryDate < graceCutoff) continue;
       counts.circuitsProcessed += 1;
 
       let ruleQuery = client.from("notification_rules").select("id,code,active");

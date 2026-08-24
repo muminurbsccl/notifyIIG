@@ -24,3 +24,9 @@ select id, 'T-30D', 'Thirty-day expiry reminder', 30, true
 from public.notification_rules
 where code = 'global-default'
 on conflict (rule_id, milestone_key) do nothing;
+
+insert into public.notification_milestones (rule_id, milestone_key, label, days_before, enabled)
+select id, 'T-0', 'Expiry-day notification', 0, true
+from public.notification_rules
+where code = 'global-default'
+on conflict (rule_id, milestone_key) do nothing;
