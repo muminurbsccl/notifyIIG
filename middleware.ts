@@ -68,34 +68,28 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  let activeProfile = false;
-  if (user && !authError) {
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("active")
-      .eq("id", user.id)
-      .maybeSingle();
-    if (profileError) {
-      if (pathname.startsWith("/api/") && !isCronPath) {
-        return NextResponse.json({ error: { code: "PROFILE_SERVICE_UNAVAILABLE", message: "Profile service is unavailable" } }, { status: 503 });
-      }
-      if (!isPublicPath && !isCronPath) return redirectWithSession("/login?error=service-unavailable");
-    }
-    activeProfile = profile?.active === true;
-  }
+  const hasAuthenticatedUser = Boolean(user) && !authError;
 
-  if (user && activeProfile && isPublicPath) return redirectWithSession("/dashboard");
+  // Profile-blind middleware: page/API layers (requireProfile / requireApiProfile)
+  // enforce active-profile and role rules. Keeping the profiles query out of
+  // middleware removes a database round trip from every request. Authenticated
+  // users are bounced off public pages; the ?error= escape on /login prevents
+  // redirect loops for inactive accounts.
+  if (
+    hasAuthenticatedUser &&
+    isPublicPath &&
+    !(pathname === "/login" && request.nextUrl.searchParams.has("error"))
+  ) {
+    return redirectWithSession("/dashboard");
+  }
   if (isPublicPath || isCronPath) {
-    if (user && !activeProfile && pathname === "/login" && !request.nextUrl.searchParams.has("error")) {
-      return redirectWithSession("/login?error=not-authorized");
-    }
     return response;
   }
-  if (!user || !activeProfile) {
-    if (pathname.startsWith("/api/")) {
+  if (!hasAuthenticatedUser) {
+    if (pathname.startsWith("/api/") && !isCronPath) {
       return NextResponse.json({ error: { code: "UNAUTHENTICATED", message: "Authentication required" } }, { status: 401 });
     }
-    return redirectWithSession(user ? "/login?error=not-authorized" : "/login");
+    return redirectWithSession("/login");
   }
   return response;
 }

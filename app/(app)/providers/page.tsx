@@ -15,8 +15,12 @@ export default async function ProvidersPage({
   const auth = await requireProfile();
   const params = await searchParams;
   const canManage = auth.profile.role === "admin" || auth.profile.role === "operations_editor";
-  const providers = await listProviders(auth.supabase, params.search);
-  const profiles = canManage ? await listActiveProfiles() : [];
+  const [providers, profiles] = canManage
+    ? await Promise.all([
+        listProviders(auth.supabase, params.search, { cacheKey: auth.profile.id }),
+        listActiveProfiles(),
+      ])
+    : [await listProviders(auth.supabase, params.search), []];
 
   return (
     <>

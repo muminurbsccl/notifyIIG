@@ -18,8 +18,10 @@ export default async function CircuitDetailPage({
   const circuit = await getCircuit(auth.supabase, auth.profile, id);
   if (!circuit) notFound();
 
-  const providers = await listProviders(auth.supabase);
-  const profiles = await listActiveProfiles();
+  const [providers, profiles] = await Promise.all([
+    listProviders(auth.supabase, undefined, { cacheKey: auth.profile.id }),
+    listActiveProfiles(),
+  ]);
   const provider = providers.find((entry) => entry.id === circuit.provider_id);
   const canManage = auth.profile.role === "admin" || auth.profile.role === "operations_editor";
   const isManager = auth.profile.role === "provider_manager";

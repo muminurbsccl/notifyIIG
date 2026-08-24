@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { redirect } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
@@ -38,9 +39,11 @@ export type AuthContext = {
 
 type ServerSupabaseClient = Awaited<ReturnType<typeof createServerSupabaseClient>>;
 
-export async function getAuthContext(
-  initializedClient?: ServerSupabaseClient,
-): Promise<AuthContext | null> {
+// React cache() deduplicates the no-argument calls made by requireProfile so a
+// single server render (layout + page) resolves authentication once instead of
+// repeating the Auth and profile round trips.
+export const getAuthContext = cache(
+  async (initializedClient?: ServerSupabaseClient): Promise<AuthContext | null> => {
   if (!getPublicConfig().configured) return null;
   const supabase = initializedClient ?? (await createServerSupabaseClient());
   const {
@@ -63,7 +66,8 @@ export async function getAuthContext(
     return null;
   }
   return { user, profile: profile as Profile, supabase };
-}
+  },
+);
 
 export async function requireProfile(roles?: AppRole[]): Promise<AuthContext> {
   if (!getPublicConfig().configured) redirect("/setup");

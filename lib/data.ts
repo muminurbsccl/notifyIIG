@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Profile } from "@/lib/auth";
 import { canAccessProvider } from "@/lib/auth";
 import { normalizeCircuitId } from "@/lib/validation";
+import { ttlCache } from "@/lib/server/ttl-cache";
 
 export type ProviderRecord = {
   id: string;
@@ -49,12 +50,19 @@ export type CircuitRecord = {
 export async function listProviders(
   supabase: SupabaseClient,
   search?: string,
+  options?: { cacheKey?: string },
 ): Promise<ProviderRecord[]> {
-  let query = supabase.from("providers").select("*").order("name");
-  if (search?.trim()) query = query.ilike("name", `%${search.trim()}%`);
-  const { data, error } = await query;
-  if (error) throw error;
-  return (data ?? []) as ProviderRecord[];
+  const load = async (): Promise<ProviderRecord[]> => {
+    let query = supabase.from("providers").select("*").order("name");
+    if (search?.trim()) query = query.ilike("name", `%${search.trim()}%`);
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data ?? []) as ProviderRecord[];
+  };
+  // RLS scopes provider rows per user, so the cache key must carry the caller's
+  // profile id; omitting cacheKey keeps the previous uncached behavior.
+  if (!options?.cacheKey) return load();
+  return ttlCache(`${options.cacheKey}:providers:${search ?? ""}`, 15_000, load);
 }
 
 export async function listCircuits(

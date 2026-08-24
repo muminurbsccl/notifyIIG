@@ -35,14 +35,16 @@ function monthLabel(value: string): string {
 
 export default async function DashboardPage() {
   const auth = await requireProfile();
-  const circuits = await listCircuits(auth.supabase, {});
-  const providers = await listProviders(auth.supabase);
-
-  const { count: failedNotifications, error: failedError } = await auth.supabase
-    .from("notification_deliveries")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "permanent_failure");
-  if (failedError) throw failedError;
+  const [circuits, providers, failedNotificationsResult] = await Promise.all([
+    listCircuits(auth.supabase, {}),
+    listProviders(auth.supabase, undefined, { cacheKey: auth.profile.id }),
+    auth.supabase
+      .from("notification_deliveries")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "permanent_failure"),
+  ]);
+  if (failedNotificationsResult.error) throw failedNotificationsResult.error;
+  const failedNotifications = failedNotificationsResult.count;
 
   const businessDate = getDhakaBusinessDate();
   const activeCircuits = circuits.filter((circuit) => circuit.status === "active");

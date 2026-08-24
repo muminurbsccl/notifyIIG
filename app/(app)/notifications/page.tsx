@@ -19,19 +19,19 @@ export default async function NotificationsPage() {
   if (eventsError) throw eventsError;
 
   const eventIds = (events ?? []).map((event) => event.id);
-  const { data: deliveries, error: deliveriesError } = await auth.supabase
-    .from("notification_deliveries")
-    .select("id,event_id,channel,masked_target,status,attempts,next_attempt_at,external_message_id,created_at")
-    .in("event_id", eventIds)
-    .order("created_at", { ascending: false });
-  if (deliveriesError) throw deliveriesError;
-
   const circuitIds = [...new Set((events ?? []).map((event) => String(event.circuit_id)))];
-  const { data: circuits, error: circuitsError } = await auth.supabase
-    .from("circuits")
-    .select("id,external_circuit_id")
-    .in("id", circuitIds);
-  if (circuitsError) throw circuitsError;
+  const [deliveriesResult, circuitsResult] = await Promise.all([
+    auth.supabase
+      .from("notification_deliveries")
+      .select("id,event_id,channel,masked_target,status,attempts,next_attempt_at,external_message_id,created_at")
+      .in("event_id", eventIds)
+      .order("created_at", { ascending: false }),
+    auth.supabase.from("circuits").select("id,external_circuit_id").in("id", circuitIds),
+  ]);
+  if (deliveriesResult.error) throw deliveriesResult.error;
+  if (circuitsResult.error) throw circuitsResult.error;
+  const deliveries = deliveriesResult.data;
+  const circuits = circuitsResult.data;
   const circuitById = new Map((circuits ?? []).map((circuit) => [circuit.id, circuit.external_circuit_id]));
 
   const eventById = new Map((events ?? []).map((event) => [event.id, event]));

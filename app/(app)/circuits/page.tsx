@@ -18,11 +18,13 @@ export default async function CircuitsPage({
   const auth = await requireProfile();
   const params = await searchParams;
   const canManage = auth.profile.role === "admin" || auth.profile.role === "operations_editor";
-  const circuits = await listCircuits(auth.supabase, {
-    search: params.search,
-    status: params.status,
-  });
-  const providers = await listProviders(auth.supabase);
+  const [circuits, providers] = await Promise.all([
+    listCircuits(auth.supabase, {
+      search: params.search,
+      status: params.status,
+    }),
+    listProviders(auth.supabase, undefined, { cacheKey: auth.profile.id }),
+  ]);
   const businessDate = getDhakaBusinessDate();
   const providerById = new Map(providers.map((provider) => [provider.id, provider]));
 

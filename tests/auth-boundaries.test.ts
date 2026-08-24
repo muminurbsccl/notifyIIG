@@ -7,10 +7,16 @@ const auth = readFileSync("lib/auth.ts", "utf8");
 const migration = readFileSync("supabase/migrations/001_initial.sql", "utf8");
 
 describe("authentication boundary artifacts", () => {
-  it("keeps inactive profiles out of middleware redirects", () => {
-    expect(middleware).toContain('.select("active")');
-    expect(middleware).toContain("activeProfile = profile?.active === true");
-    expect(middleware).toContain("redirectWithSession(\"/login?error=not-authorized\")");
+  it("keeps middleware profile-blind with page-layer enforcement and a loop-safe login escape", () => {
+    // Middleware must not query profiles on the hot path; active/role checks
+    // live in requireProfile/requireApiProfile instead.
+    expect(middleware).not.toContain('.from("profiles")');
+    // Authenticated users bounce off public pages unless /login carries an
+    // error param, which prevents redirect loops for inactive accounts.
+    expect(middleware).toContain('!(pathname === "/login" && request.nextUrl.searchParams.has("error"))');
+    expect(middleware).toContain('return redirectWithSession("/dashboard")');
+    // Page layer remains the authorization boundary for inactive accounts.
+    expect(auth).toContain('redirect("/login?error=not-authorized")');
   });
 
   it("preserves refreshed cookies when middleware redirects", () => {

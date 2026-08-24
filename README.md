@@ -41,7 +41,7 @@ authenticated zero-circuit cron run returns `200` with zero delivery counts.
    ```sql
    select count(*) from public.circuits;          -- 0
    select code from public.notification_rules;     -- global-default
-   select count(*) from public.notification_milestones; -- 2 (T-4M, T-30D)
+   select count(*) from public.notification_milestones; -- 3 (T-4M, T-30D, T-0)
    ```
 
 ## 2. Invite the first user and activate their profile
@@ -228,6 +228,25 @@ npm run lint
 npm test -- --run
 npm run build
 ```
+
+### Performance
+
+Server-rendered pages are optimized to minimize Supabase round trips per
+navigation:
+
+- Authentication is resolved once per request (React `cache()` dedupes the
+  layout and page `requireProfile()` calls), and middleware no longer performs
+  a profiles query — active/role checks stay in the page/API layer.
+- Independent page queries run in parallel (`Promise.all`).
+- Provider lists and the admin owner-selector list use a 15-second in-process
+  TTL cache keyed by profile id, because RLS scopes those rows per user.
+  Circuits are always read fresh.
+- A route-level `loading.tsx` skeleton renders instantly during navigation.
+
+Deployment: co-locate compute with the database. The Supabase project runs in
+`ap-south-1`, so set the Vercel Function Region to Mumbai (`bom1`) under
+Project Settings → Functions. On Hobby this is a dashboard setting; the
+`regions` field in `vercel.json` requires Pro and is intentionally omitted.
 
 ## Security notes
 
