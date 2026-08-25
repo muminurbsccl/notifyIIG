@@ -380,4 +380,30 @@ describe("notification engine", () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  it("notifies an expired-status circuit within the grace window", async () => {
+    const state = expiryDayState("2026-08-30");
+    state.circuits[0].status = "expired";
+    const { client, tables } = makeFakeClient(state);
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ messageId: "email-1" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+    try {
+      const summary = await runExpiryNotificationJob(now, client as never);
+
+      expect(summary.counts).toMatchObject({ circuitsProcessed: 1, eventsUpserted: 1 });
+      expect(tables.notification_events[0]).toMatchObject({
+        milestone_key: "T-0",
+        due_date: "2026-08-30",
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

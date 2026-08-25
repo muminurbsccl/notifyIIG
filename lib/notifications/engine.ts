@@ -90,7 +90,10 @@ type ResolvedEventContext = {
 const CIRCUIT_PAGE_SIZE = 200;
 const CLAIM_BATCH = 100;
 const TERMINAL_DELIVERY_STATUSES = ["sent", "delivered", "permanent_failure", "suppressed"];
-const ELIGIBLE_CIRCUIT_STATUSES = ["active", "renewal_pending", "renewed"];
+// "expired" stays eligible so a circuit receives its one-time expiry-day (T-0)
+// notice during the post-expiry grace window even after its status flips;
+// the grace cutoff below bounds processing to recently expired circuits only.
+const ELIGIBLE_CIRCUIT_STATUSES = ["active", "renewal_pending", "renewed", "expired"];
 const DEFAULT_RULE_CODE = "global-default";
 // Keep expired circuits eligible for this many days so a missed cron run still
 // delivers the expiry-day (T-0) notice exactly once, via event idempotency.
