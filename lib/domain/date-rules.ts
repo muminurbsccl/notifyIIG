@@ -93,6 +93,51 @@ export function subtractCalendarDays(value: string, days: number): string {
   });
 }
 
+export function addCalendarMonths(value: string, months: number): string {
+  if (!Number.isInteger(months) || months < 0) {
+    throw new Error("months must be a non-negative integer");
+  }
+
+  const source = parseDateOnly(value);
+  const monthIndex = source.year * 12 + (source.month - 1) + months;
+  const year = Math.floor(monthIndex / 12);
+  const month = ((monthIndex % 12) + 12) % 12 + 1;
+  const day = Math.min(source.day, daysInMonth(year, month));
+  return formatDateOnly({ year, month, day });
+}
+
+export function addCalendarDays(value: string, days: number): string {
+  if (!Number.isInteger(days) || days < 0) {
+    throw new Error("days must be a non-negative integer");
+  }
+
+  const source = parseDateOnly(value);
+  const date = new Date(Date.UTC(source.year, source.month - 1, source.day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return formatDateOnly({
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+  });
+}
+
+export function toDateOnly(value: string): string {
+  // Normalizes ISO datetime ("2026-08-30T18:00:00.000Z") or date-only ("2026-08-30") to YYYY-MM-DD
+  return value.slice(0, 10);
+}
+
+export function formatMonthLabel(value: string): string {
+  // Accepts YYYY-MM-DD or ISO datetime, returns "August 2026"
+  const dateOnly = toDateOnly(value);
+  parseDateOnly(dateOnly);
+  const [y, m] = dateOnly.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-GB", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 export function calculateInitialReminder(expiryDate: string): string {
   return subtractCalendarMonths(expiryDate, 4);
 }

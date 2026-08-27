@@ -4,34 +4,18 @@ import { NoticeDateCell } from "@/components/notice-date-cell";
 import { StatusBadge } from "@/components/status-badge";
 import { requireProfile } from "@/lib/auth";
 import { listCircuits, listProviders } from "@/lib/data";
-import { getDhakaBusinessDate } from "@/lib/domain/date-rules";
+import {
+  addCalendarDays,
+  addCalendarMonths,
+  formatMonthLabel,
+  getDhakaBusinessDate,
+  toDateOnly,
+} from "@/lib/domain/date-rules";
 import { isNoticeOverdue, noticeDate } from "@/lib/domain/notice-date";
 
 export const dynamic = "force-dynamic";
 
-function addCalendarMonths(value: string, months: number): string {
-  const [y, m, d] = value.split("-").map(Number);
-  const total = y * 12 + (m - 1) + months;
-  const year = Math.floor(total / 12);
-  const month = (total % 12) + 1;
-  const day = Math.min(d, new Date(Date.UTC(year, month, 0)).getUTCDate());
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
-function addCalendarDays(value: string, days: number): string {
-  const [y, m, d] = value.split("-").map(Number);
-  const date = new Date(Date.UTC(y, m - 1, d + days));
-  return date.toISOString().slice(0, 10);
-}
-
-function monthLabel(value: string): string {
-  const [y, m] = value.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-GB", {
-    month: "long",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
+const OPERATIONAL_STATUSES = new Set(["active", "renewal_pending", "renewed"]);
 
 export default async function DashboardPage() {
   const auth = await requireProfile();
@@ -48,22 +32,27 @@ export default async function DashboardPage() {
 
   const businessDate = getDhakaBusinessDate();
   const activeCircuits = circuits.filter((circuit) => circuit.status === "active");
-  const expiringInFourMonths = circuits.filter(
-    (circuit) =>
-      circuit.expiry_date &&
-      circuit.expiry_date >= businessDate &&
-      circuit.expiry_date <= addCalendarMonths(businessDate, 4),
-  );
-  const expiringInThirtyDays = circuits.filter(
-    (circuit) =>
-      circuit.expiry_date &&
-      circuit.expiry_date >= businessDate &&
-      circuit.expiry_date <= addCalendarDays(businessDate, 30),
-  );
+  // Operational scope mirrors notification engine (expired/draft/terminated are not "upcoming")
+  const operationalCircuits = circuits.filter((c) => OPERATIONAL_STATUSES.has(c.status));
+  const fourMonthsLimit = addCalendarMonths(businessDate, 4);
+  const thirtyDaysLimit = addCalendarDays(businessDate, 30);
+  const expiringInFourMonths = operationalCircuits.filter((circuit) => {
+    if (!circuit.expiry_date) return false;
+    const expiry = toDateOnly(circuit.expiry_date);
+    return expiry >= businessDate && expiry <= fourMonthsLimit;
+  });
+  const expiringInThirtyDays = operationalCircuits.filter((circuit) => {
+    if (!circuit.expiry_date) return false;
+    const expiry = toDateOnly(circuit.expiry_date);
+    return expiry >= businessDate && expiry <= thirtyDaysLimit;
+  });
   const missingExpiry = circuits.filter((circuit) => !circuit.expiry_date);
 
-  const upcoming = circuits
-    .filter((circuit) => circuit.expiry_date && circuit.expiry_date >= businessDate)
+  const upcoming = operationalCircuits
+    .filter((circuit) => {
+      if (!circuit.expiry_date) return false;
+      return toDateOnly(circuit.expiry_date) >= businessDate;
+    })
     .sort((a, b) => {
       const aOverdue = isNoticeOverdue(a, businessDate);
       const bOverdue = isNoticeOverdue(b, businessDate);
@@ -71,17 +60,18 @@ export default async function DashboardPage() {
       if (aOverdue && bOverdue) {
         return String(noticeDate(a)).localeCompare(String(noticeDate(b)));
       }
-      return String(a.expiry_date).localeCompare(String(b.expiry_date));
+      return toDateOnly(String(a.expiry_date)).localeCompare(toDateOnly(String(b.expiry_date)));
     });
 
   const providerById = new Map(providers.map((provider) => [provider.id, provider]));
   const exposure = [...providerById.values()]
     .map((provider) => {
       const owned = circuits.filter((circuit) => circuit.provider_id === provider.id);
+      const operationalOwned = owned.filter((c) => OPERATIONAL_STATUSES.has(c.status));
       return {
         provider,
-        active: owned.filter((circuit) => circuit.status === "active").length,
-        total: owned.length,
+        active: operationalOwned.filter((circuit) => circuit.status === "active").length,
+        total: operationalOwned.length,
       };
     })
     .filter((entry) => entry.total > 0)
@@ -127,13 +117,13 @@ export default async function DashboardPage() {
               <tbody>
                 {upcoming.map((circuit) => (
                   <tr key={circuit.id}>
-                    <td>{monthLabel(circuit.expiry_date ?? "")}</td>
+                    <td>{formatMonthLabel(circuit.expiry_date ?? "")}</td>
                     <td>{circuit.external_circuit_id}</td>
                     <td>{providerById.get(circuit.provider_id)?.name ?? "—"}</td>
                     <td>
                       <StatusBadge status={circuit.status} />
                     </td>
-                    <td>{circuit.expiry_date}</td>
+                    <td>{circuit.expiry_date ? toDateOnly(circuit.expiry_date) : "—"}</td>
                     <NoticeDateCell circuit={circuit} businessDate={businessDate} />
                   </tr>
                 ))}

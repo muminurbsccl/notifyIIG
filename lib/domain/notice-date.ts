@@ -1,4 +1,4 @@
-import { subtractCalendarMonths } from "@/lib/domain/date-rules";
+import { subtractCalendarMonths, toDateOnly } from "@/lib/domain/date-rules";
 
 export type NoticeDateCircuit = {
   expiry_date: string | null;
@@ -7,12 +7,12 @@ export type NoticeDateCircuit = {
 
 export function noticeDate(circuit: NoticeDateCircuit): string | null {
   if (circuit.renewal_procedure_start_date !== null) {
-    return circuit.renewal_procedure_start_date;
+    return toDateOnly(circuit.renewal_procedure_start_date);
   }
   if (circuit.expiry_date === null) {
     return null;
   }
-  return subtractCalendarMonths(circuit.expiry_date, 3);
+  return subtractCalendarMonths(toDateOnly(circuit.expiry_date), 3);
 }
 
 export function isNoticeOverdue(circuit: NoticeDateCircuit, businessDate: string): boolean {
@@ -20,5 +20,5 @@ export function isNoticeOverdue(circuit: NoticeDateCircuit, businessDate: string
   if (notice === null || circuit.expiry_date === null) {
     return false;
   }
-  return notice < businessDate && circuit.expiry_date >= businessDate;
+  return notice < businessDate && toDateOnly(circuit.expiry_date) >= businessDate;
 }
