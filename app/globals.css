@@ -190,6 +190,12 @@ textarea:focus-visible {
   font-weight: 700;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
 .user-chip {
   display: flex;
   align-items: center;
@@ -405,6 +411,11 @@ code {
   .topbar {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .topbar-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .main-content {

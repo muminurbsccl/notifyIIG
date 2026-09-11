@@ -59,7 +59,7 @@ export function LoginForm({ error, notice, method, step, email }: LoginFormProps
             <input
               autoComplete="email"
               name="email"
-              placeholder="support.iig@bsccl.com"
+              placeholder="name@bsccl.com"
               required
               type="email"
             />
@@ -102,7 +102,7 @@ export function LoginForm({ error, notice, method, step, email }: LoginFormProps
             <input
               autoComplete="email"
               name="email"
-              placeholder="support.iig@bsccl.com"
+              placeholder="name@bsccl.com"
               required
               type="email"
             />

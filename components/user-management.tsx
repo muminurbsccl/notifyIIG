@@ -115,16 +115,6 @@ export function UserManagement() {
     else { setEditing(null); setResult("User updated successfully"); await load(); }
   }
 
-  async function remove(user: User) {
-    if (!window.confirm(`Delete ${user.email ?? "this user"}? This cannot be undone.`)) return;
-    setError("");
-    setResult("");
-    const response = await fetch(`/api/users/${user.id}`, { method: "DELETE" });
-    const body = await response.json();
-    if (!response.ok) setError(body.error?.message ?? "User could not be deleted");
-    else { setResult("User deleted successfully"); await load(); }
-  }
-
   return (
     <>
       <div className="data-card">
@@ -152,7 +142,7 @@ export function UserManagement() {
             <td>{user.email ?? "—"}</td><td>{user.full_name || "—"}</td>
             <td><select aria-label={`Role for ${user.email}`} value={user.role} onChange={(event) => changeRole(user, event.target.value)}>{ROLES.map((value) => <option key={value}>{value}</option>)}</select></td>
             <td>{user.active ? "Active" : "Inactive"}</td>
-            <td><div className="form-actions"><button className="button button-secondary" type="button" onClick={() => beginEdit(user)}>Edit</button><button className="button button-secondary" type="button" onClick={() => toggle(user)}>{user.active ? "Deactivate" : "Activate"}</button><button className="button button-secondary" type="button" onClick={() => remove(user)}>Delete</button></div></td>
+            <td><div className="form-actions"><button className="button button-secondary" type="button" onClick={() => beginEdit(user)}>Edit</button><button className="button button-secondary" type="button" onClick={() => toggle(user)}>{user.active ? "Deactivate" : "Activate"}</button></div></td>
           </tr>)}</tbody>
         </table>
       </div>

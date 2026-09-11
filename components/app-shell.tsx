@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactElement, ReactNode } from "react";
 import { BrandLogo } from "@/components/brand-logo";
+import { signOut } from "@/app/(app)/actions";
 
 type AppShellProps = {
   children: ReactNode;
@@ -52,14 +53,21 @@ export function AppShell({ children, userLabel, role, isAdmin = false, setupWarn
             <p className="eyebrow">BSCPLC IPT NotifySystem</p>
             <p className="topbar-title">Notification system for service renewal</p>
           </div>
-          <div className="user-chip" aria-label={`Signed in as ${userLabel}, ${role}`}>
-            <span className="avatar" aria-hidden="true">
-              {userLabel.slice(0, 1).toUpperCase()}
-            </span>
-            <span>
-              <strong>{userLabel}</strong>
-              <small>{role}</small>
-            </span>
+          <div className="topbar-actions">
+            <div className="user-chip" aria-label={`Signed in as ${userLabel}, ${role}`}>
+              <span className="avatar" aria-hidden="true">
+                {userLabel.slice(0, 1).toUpperCase()}
+              </span>
+              <span>
+                <strong>{userLabel}</strong>
+                <small>{role}</small>
+              </span>
+            </div>
+            <form action={signOut}>
+              <button className="button button-secondary button-small" type="submit">
+                Log out
+              </button>
+            </form>
           </div>
         </header>
         <main className="main-content">{children}</main>
