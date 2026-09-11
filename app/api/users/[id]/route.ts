@@ -4,6 +4,7 @@ import { requireApiProfile } from "@/lib/auth";
 import { jsonError, jsonNotFound, InputError } from "@/lib/http";
 import { writeAudit } from "@/lib/audit";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
+import { validatePassword } from "@/lib/domain/password-policy";
 
 function safeProfile(profile: Record<string, unknown>) {
   return {
@@ -47,7 +48,10 @@ export async function PATCH(request: Request, context: Context) {
       throw new InputError("LAST_ADMIN", "The last active administrator cannot be deactivated or demoted", 422);
     }
     const password = typeof body.password === "string" && body.password ? body.password : null;
-    if (password && password.length < 8) throw new InputError("INVALID_PASSWORD", "Password must be at least 8 characters");
+    if (password) {
+      const passwordError = validatePassword(password);
+      if (passwordError) throw new InputError("INVALID_PASSWORD", passwordError);
+    }
     const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : undefined;
     const fullName = typeof body.fullName === "string" ? body.fullName.trim() : String(existing.full_name ?? "");
     const authUpdate: Record<string, unknown> = { user_metadata: { full_name: fullName } };

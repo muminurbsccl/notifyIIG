@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireApiProfile } from "@/lib/auth";
+import { canAccessProvider, requireApiProfile } from "@/lib/auth";
 import { jsonError, jsonForbidden, jsonNotFound } from "@/lib/http";
 import { writeAudit } from "@/lib/audit";
 import { circuitPatchSchema, normalizeCircuitId, providerManagerCircuitPatchSchema } from "@/lib/validation";
@@ -21,6 +21,9 @@ export async function GET(_request: Request, context: RouteContext) {
     const { data, error } = await auth.supabase.from("circuits").select("*").eq("id", id).maybeSingle();
     if (error) throw error;
     if (!data) return jsonNotFound("Circuit not found");
+    // Defense in depth alongside RLS: the app layer should not depend solely
+    // on row-level security to keep providers scoped to their own circuits.
+    if (!canAccessProvider(auth.profile, String(data.provider_id))) return jsonNotFound("Circuit not found");
     return NextResponse.json({ circuit: data });
   } catch (cause) {
     return jsonError(cause);
@@ -41,6 +44,9 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (beforeResult.error) throw beforeResult.error;
     if (!beforeResult.data) return jsonNotFound("Circuit not found");
     const before = beforeResult.data as Record<string, unknown>;
+    // Defense in depth alongside RLS: the app layer should not depend solely
+    // on row-level security to keep providers scoped to their own circuits.
+    if (!canAccessProvider(auth.profile, String(before.provider_id))) return jsonNotFound("Circuit not found");
 
     if (auth.profile.role === "provider_manager") {
       const input = providerManagerCircuitPatchSchema.parse(body);

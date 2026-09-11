@@ -4,6 +4,7 @@ import { requireApiProfile } from "@/lib/auth";
 import { jsonError, InputError } from "@/lib/http";
 import { writeAudit } from "@/lib/audit";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
+import { validatePassword } from "@/lib/domain/password-policy";
 
 function input(body: Record<string, unknown>) {
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
@@ -12,7 +13,10 @@ function input(body: Record<string, unknown>) {
   const password = typeof body.password === "string" ? body.password : "";
   if (!/^\S+@\S+\.\S+$/.test(email)) throw new InputError("INVALID_EMAIL", "A valid email is required");
   if (!APP_ROLES.includes(role as (typeof APP_ROLES)[number])) throw new InputError("INVALID_ROLE", "Invalid user role");
-  if (password && password.length < 8) throw new InputError("INVALID_PASSWORD", "Password must be at least 8 characters");
+  if (password) {
+    const passwordError = validatePassword(password);
+    if (passwordError) throw new InputError("INVALID_PASSWORD", passwordError);
+  }
   return {
     email,
     fullName,
