@@ -23,9 +23,12 @@ function input(body: Record<string, unknown>) {
     role,
     active: body.active !== false,
     password: password || null,
+    // undefined (key omitted) means "caller didn't specify" -> default viewers to
+    // every provider below so a new viewer isn't silently scoped to nothing;
+    // an explicit [] still means "no providers".
     allowedProviderIds: Array.isArray(body.allowedProviderIds)
       ? body.allowedProviderIds.filter((value): value is string => typeof value === "string")
-      : [],
+      : undefined,
   };
 }
 
@@ -70,9 +73,22 @@ export async function POST(request: Request) {
       ? await service.auth.admin.createUser({ email: values.email, password: values.password, email_confirm: true, user_metadata: { full_name: values.fullName } })
       : await service.auth.admin.inviteUserByEmail(values.email, { data: { full_name: values.fullName } });
     if (result.error || !result.data.user) throw result.error ?? new Error("User creation failed");
+    let allowedProviderIds = values.allowedProviderIds;
+    if (allowedProviderIds === undefined) {
+      if (values.role === "viewer") {
+        const { data: providers, error: providerError } = await service.from("providers").select("id");
+        if (providerError) {
+          await service.auth.admin.deleteUser(result.data.user.id);
+          throw providerError;
+        }
+        allowedProviderIds = (providers ?? []).map((provider) => provider.id as string);
+      } else {
+        allowedProviderIds = [];
+      }
+    }
     const { data: profile, error: profileError } = await service
       .from("profiles")
-      .update({ email: values.email, full_name: values.fullName, role: values.role, active: values.active, allowed_provider_ids: values.allowedProviderIds })
+      .update({ email: values.email, full_name: values.fullName, role: values.role, active: values.active, allowed_provider_ids: allowedProviderIds })
       .eq("id", result.data.user.id)
       .select()
       .single();

@@ -22,6 +22,7 @@ export function UserManagement() {
   const [fullName, setFullName] = useState("");
   const [role, setRole] = useState("viewer");
   const [password, setPassword] = useState("");
+  const [createProviders, setCreateProviders] = useState<string[]>([]);
   const [error, setError] = useState("");
   const [result, setResult] = useState("");
   const [editing, setEditing] = useState<User | null>(null);
@@ -42,6 +43,12 @@ export function UserManagement() {
     load().catch((cause) => setError(cause instanceof Error ? cause.message : "Users could not be loaded"));
   }, []);
 
+  // Viewers default to every provider so a new viewer isn't silently scoped to
+  // nothing; switching the role selector re-applies this default.
+  useEffect(() => {
+    setCreateProviders(role === "viewer" ? providers.map((provider) => provider.id) : []);
+  }, [providers, role]);
+
   async function create(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
@@ -49,7 +56,7 @@ export function UserManagement() {
     const response = await fetch("/api/users", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email, fullName, role, active: true, ...(password ? { password } : {}) }),
+      body: JSON.stringify({ email, fullName, role, active: true, allowedProviderIds: createProviders, ...(password ? { password } : {}) }),
     });
     const body = await response.json();
     if (!response.ok) {
@@ -129,6 +136,26 @@ export function UserManagement() {
             <label>Role<select value={role} onChange={(event) => setRole(event.target.value)}>{ROLES.map((value) => <option key={value}>{value}</option>)}</select></label>
             <label>Set password (optional)<input minLength={8} type="password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
           </div>
+          {providers.length > 0 && (
+            <fieldset>
+              <legend>Provider access</legend>
+              <p className="muted form-help">Viewers are granted all providers by default; uncheck any that shouldn&apos;t be visible.</p>
+              {providers.map((provider) => (
+                <label className="form-check" key={provider.id}>
+                  <input
+                    checked={createProviders.includes(provider.id)}
+                    type="checkbox"
+                    onChange={(event) =>
+                      setCreateProviders((current) =>
+                        event.target.checked ? [...current, provider.id] : current.filter((id) => id !== provider.id),
+                      )
+                    }
+                  />
+                  <span>{provider.name} ({provider.code})</span>
+                </label>
+              ))}
+            </fieldset>
+          )}
           <button className="button button-primary" type="submit">Create user</button>
         </form>
       </div>
