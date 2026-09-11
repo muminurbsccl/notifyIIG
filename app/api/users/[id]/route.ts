@@ -56,17 +56,24 @@ export async function PATCH(request: Request, context: Context) {
     const allowedProviderIds = Array.isArray(body.allowedProviderIds)
       ? body.allowedProviderIds.filter((value): value is string => typeof value === "string")
       : undefined;
-    const { data: profile, error: profileError } = await service.from("profiles").update({ email: email ?? existing.email, full_name: fullName, role: nextRole, active: nextActive, ...(allowedProviderIds ? { allowed_provider_ids: allowedProviderIds } : {}) }).eq("id", id).select().single();
+    const profileUpdate = { email: email ?? existing.email, full_name: fullName, role: nextRole, active: nextActive, ...(allowedProviderIds ? { allowed_provider_ids: allowedProviderIds } : {}) };
+    const { data: profile, error: profileError } = await service.from("profiles").update(profileUpdate).eq("id", id).select().single();
     if (profileError) throw profileError;
     const { error: authError } = await service.auth.admin.updateUserById(id, authUpdate);
     if (authError) {
-      await service.from("profiles").update(existing).eq("id", id);
+      // Revert only the fields this request touched, not the full pre-update
+      // snapshot, so a concurrent edit to other columns isn't clobbered.
+      const rollback = Object.fromEntries(
+        Object.keys(profileUpdate).map((key) => [key, existing[key as keyof typeof existing]]),
+      );
+      await service.from("profiles").update(rollback).eq("id", id);
       throw authError;
     }
     try {
       await writeAudit({ actorUserId: actor.user.id, action: "user.update", entityType: "profile", entityId: id, before: safeProfile(existing), after: { ...safeProfile(profile), passwordChanged: Boolean(password) }, requestId: request.headers.get("x-request-id") });
-    } catch {
+    } catch (auditError) {
       // The user mutation succeeded; do not make the client retry and duplicate it.
+      console.error("Failed to write audit log for user.update", auditError);
     }
     return NextResponse.json({ user: safeProfile(profile) });
   } catch (cause) {
@@ -88,8 +95,9 @@ export async function DELETE(request: Request, context: Context) {
     if (result.error) throw result.error;
     try {
       await writeAudit({ actorUserId: actor.user.id, action: "user.delete", entityType: "profile", entityId: id, requestId: request.headers.get("x-request-id") });
-    } catch {
+    } catch (auditError) {
       // The user mutation succeeded; do not make the client retry and duplicate it.
+      console.error("Failed to write audit log for user.delete", auditError);
     }
     return NextResponse.json({ ok: true });
   } catch (cause) {

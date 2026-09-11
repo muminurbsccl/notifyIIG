@@ -20,7 +20,7 @@ export function redactFailureMessage(
 ): string {
   let redacted = message.replace(SENSITIVE_URL, "[REDACTED]");
   for (const secret of secrets) {
-    if (typeof secret === "string" && secret.length >= 8) {
+    if (typeof secret === "string" && secret.length >= 4) {
       redacted = redacted.split(secret).join("[REDACTED]");
     }
   }

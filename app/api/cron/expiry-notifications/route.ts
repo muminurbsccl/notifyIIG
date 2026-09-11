@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { runExpiryNotificationJob } from "@/lib/notifications/engine";
 import { getServerConfig } from "@/lib/server-config";
@@ -9,7 +10,10 @@ export const runtime = "nodejs";
 function verifyCronRequest(request: Request): boolean {
   const secret = getServerConfig().cronSecret;
   if (!secret) return false;
-  return (request.headers.get("authorization") ?? "") === `Bearer ${secret}`;
+  const expected = Buffer.from(`Bearer ${secret}`);
+  const provided = Buffer.from(request.headers.get("authorization") ?? "");
+  if (provided.length !== expected.length) return false;
+  return timingSafeEqual(provided, expected);
 }
 
 export async function GET(request: Request) {

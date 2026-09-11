@@ -46,8 +46,16 @@ describe("notification engine", () => {
     vi.stubEnv("EMAIL_API_KEY", "email-key-test");
     vi.stubEnv("EMAIL_FROM", "notify@bscplc.test");
     vi.stubEnv("EMAIL_FROM_NAME", "BSCPLC");
+    // The fake claim RPC compares next_attempt_at against the real wall clock
+    // (matching the production SQL function's use of now()), so tests must
+    // freeze system time at `now` — otherwise retry timestamps computed from
+    // this fixed historical `now` drift into the past as real time advances,
+    // causing deliveries to be re-claimed within the same job run.
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
   });
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllEnvs();
   });
 
@@ -100,6 +108,57 @@ describe("notification engine", () => {
       expect(deliveries[0].target_hash).toHaveLength(64);
       expect(deliveries[0].target_ciphertext).toBeTruthy();
       expect(tables.notification_events[0].status).toBe("completed");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("includes configured cc/bcc addresses on every email send", async () => {
+    const state = baseState();
+    state.provider_contacts.push({
+      id: "00000000-0000-0000-0000-0000000000e2",
+      provider_id: providerId,
+      contact_type: "internal_owner",
+      name: "Manager",
+      email: "manager@bscplc.test",
+      phone_e164: null,
+      whatsapp_opt_in_at: null,
+      active: true,
+    });
+    state.provider_notification_settings = [
+      {
+        provider_id: providerId,
+        email_enabled: true,
+        whatsapp_enabled: false,
+        discord_enabled: false,
+        email_to: [],
+        email_cc: ["00000000-0000-0000-0000-0000000000e2"],
+        email_bcc: ["audit@bscplc.test"],
+        whatsapp_recipient_ids: [],
+        discord_mention_ids: [],
+        discord_webhook_ciphertext: null,
+      },
+    ];
+    const { client } = makeFakeClient(state);
+    const originalFetch = globalThis.fetch;
+    const sentBodies: Record<string, unknown>[] = [];
+    globalThis.fetch = vi.fn((_url: unknown, init?: RequestInit) => {
+      sentBodies.push(JSON.parse(String(init?.body)));
+      return Promise.resolve(
+        new Response(JSON.stringify({ messageId: "email-1" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+    try {
+      const summary = await runExpiryNotificationJob(now, client as never);
+      expect(summary.counts.sent).toBeGreaterThan(0);
+      expect(sentBodies.length).toBeGreaterThan(0);
+      for (const body of sentBodies) {
+        expect(body.cc).toEqual(["manager@bscplc.test"]);
+        expect(body.bcc).toEqual(["audit@bscplc.test"]);
+      }
     } finally {
       globalThis.fetch = originalFetch;
     }

@@ -7,7 +7,7 @@ import { dispatchChannel } from "@/lib/integrations/index";
 import { getServerConfig } from "@/lib/server-config";
 import { createServiceSupabaseClient } from "@/lib/supabase/service";
 import { decryptTarget, encryptTarget, maskTarget } from "./target-crypto";
-import { buildEmailTargets } from "./recipients";
+import { buildEmailTargets, resolveEmailAddressList } from "./recipients";
 
 export type JobCounts = {
   circuitsProcessed: number;
@@ -67,6 +67,8 @@ type ResolvedRecipient = {
   channel: "email" | "whatsapp" | "discord";
   target: string;
   mentionIds?: string[];
+  cc?: string[];
+  bcc?: string[];
 };
 
 type DeliveryClaim = {
@@ -180,8 +182,19 @@ async function resolveRecipients(
     },
     contacts,
   );
+  const ccTargets = emailEnabled
+    ? resolveEmailAddressList(normalizeRecipientList(settings.email_cc), contacts)
+    : [];
+  const bccTargets = emailEnabled
+    ? resolveEmailAddressList(normalizeRecipientList(settings.email_bcc), contacts)
+    : [];
   for (const target of emailTargets) {
-    recipients.push({ channel: "email", target });
+    recipients.push({
+      channel: "email",
+      target,
+      cc: ccTargets.filter((address) => address !== target),
+      bcc: bccTargets.filter((address) => address !== target),
+    });
   }
 
   if (whatsappEnabled) {
@@ -255,7 +268,7 @@ async function resolveEventContext(
 
   const eventResult = await client
     .from("notification_events")
-    .select("circuit_id,milestone_key")
+    .select("circuit_id,milestone_key,rule_id")
     .eq("id", eventId)
     .maybeSingle();
   if (eventResult.error) {
@@ -275,10 +288,27 @@ async function resolveEventContext(
   const circuit = requireSingleRow(circuitResult, "circuit");
   if (!circuit) return null;
 
+  const milestoneKey = asString(event.milestone_key);
+  let milestoneLabel = milestoneKey;
+  if (event.rule_id) {
+    const milestoneResult = await client
+      .from("notification_milestones")
+      .select("label")
+      .eq("rule_id", String(event.rule_id))
+      .eq("milestone_key", milestoneKey)
+      .maybeSingle();
+    if (milestoneResult.error) {
+      throw new Error(`Failed to load milestone label: ${milestoneResult.error.message}`);
+    }
+    const milestoneRow = requireSingleRow(milestoneResult, "notification milestone");
+    const label = milestoneRow ? asString(milestoneRow.label) : "";
+    if (label) milestoneLabel = label;
+  }
+
   const context = {
     externalCircuitId: asString(circuit.external_circuit_id),
     expiryDate: asString(circuit.expiry_date),
-    milestoneLabel: asString(event.milestone_key),
+    milestoneLabel,
   };
 
   contextCache.set(eventId, context);
@@ -293,6 +323,8 @@ function buildDispatchInput(
     expiryDate: string;
     milestoneLabel: string;
     mentionIds?: string[];
+    cc?: string[];
+    bcc?: string[];
   },
   config: ReturnType<typeof getServerConfig>,
 ) {
@@ -305,6 +337,8 @@ function buildDispatchInput(
     return {
       channel: "email" as const,
       to: [context.target],
+      cc: context.cc ?? [],
+      bcc: context.bcc ?? [],
       ...email,
     };
   }
@@ -365,6 +399,28 @@ function eventCompletionStatus(statuses: string[]): string {
 
 function isTerminalDeliveryStatus(status: string): boolean {
   return TERMINAL_DELIVERY_STATUSES.includes(status);
+}
+
+type EmailTargetPayload = { to: string; cc: string[]; bcc: string[] };
+
+// Email deliveries encrypt {to,cc,bcc} together so cc/bcc survive retries.
+// Older queued rows (pre cc/bcc support) hold a plain email string; treat
+// those as to-only with no cc/bcc for backward compatibility.
+function parseEmailTargetPayload(decrypted: string): EmailTargetPayload {
+  try {
+    const parsed: unknown = JSON.parse(decrypted);
+    if (parsed && typeof parsed === "object" && typeof (parsed as Row).to === "string") {
+      const row = parsed as Row;
+      return {
+        to: asString(row.to),
+        cc: Array.isArray(row.cc) ? row.cc.filter((value): value is string => typeof value === "string") : [],
+        bcc: Array.isArray(row.bcc) ? row.bcc.filter((value): value is string => typeof value === "string") : [],
+      };
+    }
+  } catch {
+    // Not JSON — legacy plain-string target.
+  }
+  return { to: decrypted, cc: [], bcc: [] };
 }
 
 export async function runExpiryNotificationJob(
@@ -477,7 +533,11 @@ export async function runExpiryNotificationJob(
       // Phase B: independent queued deliveries for new events.
       for (const eventId of eventIds) {
         for (const recipient of recipients) {
-          const encryptedTarget = encryptTarget(recipient.target, config.appEncryptionKey);
+          const plaintextTarget =
+            recipient.channel === "email"
+              ? JSON.stringify({ to: recipient.target, cc: recipient.cc ?? [], bcc: recipient.bcc ?? [] })
+              : recipient.target;
+          const encryptedTarget = encryptTarget(plaintextTarget, config.appEncryptionKey);
           const deliveryUpsert = await client
             .from("notification_deliveries")
             .upsert(
@@ -552,12 +612,16 @@ export async function runExpiryNotificationJob(
         continue;
       }
 
+      const emailPayload = delivery.channel === "email" ? parseEmailTargetPayload(target) : null;
+
       const result = await dispatchChannel(
         buildDispatchInput(
           {
             ...eventContext,
             channel: delivery.channel,
-            target,
+            target: emailPayload ? emailPayload.to : target,
+            cc: emailPayload?.cc,
+            bcc: emailPayload?.bcc,
           },
           config,
         ),

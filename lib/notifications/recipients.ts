@@ -72,3 +72,46 @@ export function buildEmailTargets(
 
   return [...targets.keys()];
 }
+
+/**
+ * Resolves a raw cc/bcc settings list (each entry either a literal email
+ * address or a provider_contacts id) to canonical email addresses. Unlike
+ * buildEmailTargets, this has no implicit fallback and no contact-type
+ * restriction: cc/bcc are opt-in only, for any active contact with an email.
+ */
+export function resolveEmailAddressList(
+  entries: unknown[],
+  contacts: EmailRecipientInput[] = [],
+): string[] {
+  const targets = new Map<string, string>();
+
+  const add = (value: unknown) => {
+    if (typeof value !== "string") return;
+    const canonical = canonicalEmailAddress(value);
+    if (!canonical.includes("@")) return;
+    targets.set(canonical, canonical);
+  };
+
+  const contactIds = new Set<string>();
+  for (const entry of entries) {
+    if (typeof entry !== "string") continue;
+
+    const canonical = canonicalEmailAddress(entry);
+    if (canonical.includes("@")) {
+      add(canonical);
+      continue;
+    }
+
+    contactIds.add(canonical);
+  }
+
+  if (contactIds.size > 0) {
+    for (const contact of contacts) {
+      if (contact.active !== true) continue;
+      if (typeof contact.id !== "string" || !contactIds.has(contact.id.toLowerCase().trim())) continue;
+      if (typeof contact.email === "string") add(contact.email);
+    }
+  }
+
+  return [...targets.keys()];
+}

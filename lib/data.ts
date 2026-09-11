@@ -5,6 +5,12 @@ import { canAccessProvider } from "@/lib/auth";
 import { normalizeCircuitId } from "@/lib/validation";
 import { ttlCache } from "@/lib/server/ttl-cache";
 
+// Escapes ilike wildcard metacharacters so user search input can't turn a
+// filtered search into an unintended match-everything query (e.g. "%").
+function escapeIlikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
 export type ProviderRecord = {
   id: string;
   code: string;
@@ -54,7 +60,7 @@ export async function listProviders(
 ): Promise<ProviderRecord[]> {
   const load = async (): Promise<ProviderRecord[]> => {
     let query = supabase.from("providers").select("*").order("name");
-    if (search?.trim()) query = query.ilike("name", `%${search.trim()}%`);
+    if (search?.trim()) query = query.ilike("name", `%${escapeIlikePattern(search.trim())}%`);
     const { data, error } = await query;
     if (error) throw error;
     return (data ?? []) as ProviderRecord[];
@@ -70,7 +76,7 @@ export async function listCircuits(
   filters: { search?: string; providerId?: string; status?: string },
 ): Promise<CircuitRecord[]> {
   let query = supabase.from("circuits").select("*").order("expiry_date", { ascending: true, nullsFirst: false });
-  if (filters.search?.trim()) query = query.ilike("external_circuit_id", `%${filters.search.trim()}%`);
+  if (filters.search?.trim()) query = query.ilike("external_circuit_id", `%${escapeIlikePattern(filters.search.trim())}%`);
   if (filters.providerId) query = query.eq("provider_id", filters.providerId);
   if (filters.status) query = query.eq("status", filters.status);
   const { data, error } = await query;

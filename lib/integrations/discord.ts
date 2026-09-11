@@ -7,6 +7,20 @@ export function sanitizeDiscordMentions(text: string): string {
   return text.replace(/@everyone/gi, "everyone").replace(/@here/gi, "here");
 }
 
+const ALLOWED_DISCORD_HOSTS = new Set(["discord.com", "discordapp.com", "canary.discord.com", "ptb.discord.com"]);
+
+// Discord webhook URLs come from stored settings (or an admin-only test-send
+// request); without a host allowlist, fetch() becomes an open SSRF proxy for
+// whoever can supply a "webhook" URL.
+function isValidDiscordWebhookUrl(webhookUrl: string): boolean {
+  try {
+    const url = new URL(webhookUrl);
+    return url.protocol === "https:" && ALLOWED_DISCORD_HOSTS.has(url.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
+
 export async function sendDiscord(input: DiscordSendInput): Promise<ChannelResult> {
   const webhookUrl = input.webhookUrl.trim();
   if (!webhookUrl) {
@@ -15,6 +29,14 @@ export async function sendDiscord(input: DiscordSendInput): Promise<ChannelResul
       kind: "permanent",
       status: null,
       message: "Discord channel is not configured",
+    };
+  }
+  if (!isValidDiscordWebhookUrl(webhookUrl)) {
+    return {
+      ok: false,
+      kind: "permanent",
+      status: null,
+      message: "Discord webhook URL must be an https://discord.com webhook",
     };
   }
   try {

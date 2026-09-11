@@ -78,8 +78,9 @@ export async function POST(request: Request) {
     }
     try {
       await writeAudit({ actorUserId: actor.user.id, action: "user.create", entityType: "profile", entityId: result.data.user.id, after: { email: values.email, fullName: values.fullName, role: values.role, active: values.active }, requestId: request.headers.get("x-request-id") });
-    } catch {
+    } catch (auditError) {
       // The user mutation succeeded; do not make the client retry and duplicate it.
+      console.error("Failed to write audit log for user.create", auditError);
     }
     return NextResponse.json({ user: safeProfile(profile) }, { status: 201 });
   } catch (cause) {
