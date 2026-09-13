@@ -80,9 +80,31 @@ export function CircuitForm({
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   function set<K extends keyof typeof values>(key: K, value: (typeof values)[K]) {
     setValues((current) => ({ ...current, [key]: value }));
+  }
+
+  async function handleDelete() {
+    if (!circuitId) return;
+    if (!window.confirm(`Delete circuit ${values.externalCircuitId || ""}? This cannot be undone.`)) return;
+    setFormError("");
+    setDeleting(true);
+    try {
+      const response = await fetch(`/api/circuits/${circuitId}`, { method: "DELETE" });
+      const body = await response.json();
+      if (!response.ok) {
+        setFormError(body.error?.message ?? "The circuit could not be deleted");
+        return;
+      }
+      router.push("/circuits");
+      router.refresh();
+    } catch {
+      setFormError("A network error occurred while deleting the circuit");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   const firstReminder =
@@ -382,6 +404,11 @@ export function CircuitForm({
         {circuitId && (
           <button className="button button-secondary" type="button" onClick={() => router.push(`/circuits/${circuitId}`)}>
             Cancel
+          </button>
+        )}
+        {circuitId && (
+          <button className="button button-danger" disabled={deleting} onClick={handleDelete} type="button">
+            {deleting ? "Deleting…" : "Delete circuit"}
           </button>
         )}
       </div>

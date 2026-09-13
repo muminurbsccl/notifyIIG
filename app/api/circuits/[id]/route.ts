@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { canAccessProvider, requireApiProfile } from "@/lib/auth";
-import { jsonError, jsonForbidden, jsonNotFound } from "@/lib/http";
+import { InputError, jsonError, jsonForbidden, jsonNotFound } from "@/lib/http";
 import { writeAudit } from "@/lib/audit";
 import { circuitPatchSchema, normalizeCircuitId, providerManagerCircuitPatchSchema } from "@/lib/validation";
+
+const FOREIGN_KEY_VIOLATION = "23503";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -130,6 +132,30 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     await writeAudit({ actorUserId: auth.user.id, action: expiryChanged ? "circuit.renewal.update" : "circuit.update", entityType: "circuit", entityId: id, before, after: data, requestId: request.headers.get("x-request-id") });
     return NextResponse.json({ circuit: data });
+  } catch (cause) {
+    return jsonError(cause);
+  }
+}
+
+export async function DELETE(request: Request, context: RouteContext) {
+  try {
+    const auth = await requireApiProfile(["admin", "operations_editor"]);
+    const { id } = await context.params;
+    const beforeResult = await auth.supabase.from("circuits").select("*").eq("id", id).maybeSingle();
+    if (beforeResult.error) throw beforeResult.error;
+    if (!beforeResult.data) return jsonNotFound("Circuit not found");
+    const before = beforeResult.data as Record<string, unknown>;
+    if (!canAccessProvider(auth.profile, String(before.provider_id))) return jsonNotFound("Circuit not found");
+
+    const { error } = await auth.supabase.from("circuits").delete().eq("id", id);
+    if (error) {
+      if (error.code === FOREIGN_KEY_VIOLATION) {
+        throw new InputError("CIRCUIT_HAS_HISTORY", "This circuit has renewal, notification, or invoice history and cannot be deleted", 409);
+      }
+      throw error;
+    }
+    await writeAudit({ actorUserId: auth.user.id, action: "circuit.delete", entityType: "circuit", entityId: id, before, requestId: request.headers.get("x-request-id") });
+    return NextResponse.json({ ok: true });
   } catch (cause) {
     return jsonError(cause);
   }

@@ -41,9 +41,31 @@ export function ProviderForm({ initial, providerId, submitLabel, profiles = [] }
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   function set<K extends keyof typeof values>(key: K, value: (typeof values)[K]) {
     setValues((current) => ({ ...current, [key]: value }));
+  }
+
+  async function handleDelete() {
+    if (!providerId) return;
+    if (!window.confirm(`Delete ${values.name || "this provider"}? This cannot be undone.`)) return;
+    setFormError("");
+    setDeleting(true);
+    try {
+      const response = await fetch(`/api/providers/${providerId}`, { method: "DELETE" });
+      const body = await response.json();
+      if (!response.ok) {
+        setFormError(body.error?.message ?? "The provider could not be deleted");
+        return;
+      }
+      router.push("/providers");
+      router.refresh();
+    } catch {
+      setFormError("A network error occurred while deleting the provider");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   function fieldError(name: string): string | undefined {
@@ -156,6 +178,11 @@ export function ProviderForm({ initial, providerId, submitLabel, profiles = [] }
         <button className="button button-primary" disabled={submitting} type="submit">
           {submitting ? "Saving…" : submitLabel ?? "Save provider"}
         </button>
+        {providerId && (
+          <button className="button button-danger" disabled={deleting} onClick={handleDelete} type="button">
+            {deleting ? "Deleting…" : "Delete provider"}
+          </button>
+        )}
       </div>
     </form>
   );

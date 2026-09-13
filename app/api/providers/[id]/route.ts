@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireApiProfile } from "@/lib/auth";
-import { jsonError, jsonNotFound } from "@/lib/http";
+import { InputError, jsonError, jsonNotFound } from "@/lib/http";
 import { providerInputSchema } from "@/lib/validation";
 import { writeAudit } from "@/lib/audit";
 
 type RouteContext = { params: Promise<{ id: string }> };
+
+const FOREIGN_KEY_VIOLATION = "23503";
 
 export async function GET(_request: Request, context: RouteContext) {
   try {
@@ -46,6 +48,28 @@ export async function PATCH(request: Request, context: RouteContext) {
     if (error) throw error;
     await writeAudit({ actorUserId: auth.user.id, action: "provider.update", entityType: "provider", entityId: id, before: beforeResult.data, after: data, requestId: request.headers.get("x-request-id") });
     return NextResponse.json({ provider: data });
+  } catch (cause) {
+    return jsonError(cause);
+  }
+}
+
+export async function DELETE(request: Request, context: RouteContext) {
+  try {
+    const auth = await requireApiProfile(["admin", "operations_editor"]);
+    const { id } = await context.params;
+    const beforeResult = await auth.supabase.from("providers").select("*").eq("id", id).maybeSingle();
+    if (beforeResult.error) throw beforeResult.error;
+    if (!beforeResult.data) return jsonNotFound("Provider not found");
+
+    const { error } = await auth.supabase.from("providers").delete().eq("id", id);
+    if (error) {
+      if (error.code === FOREIGN_KEY_VIOLATION) {
+        throw new InputError("PROVIDER_HAS_CIRCUITS", "This provider still has circuits registered against it. Remove or reassign them before deleting the provider", 409);
+      }
+      throw error;
+    }
+    await writeAudit({ actorUserId: auth.user.id, action: "provider.delete", entityType: "provider", entityId: id, before: beforeResult.data, requestId: request.headers.get("x-request-id") });
+    return NextResponse.json({ ok: true });
   } catch (cause) {
     return jsonError(cause);
   }
