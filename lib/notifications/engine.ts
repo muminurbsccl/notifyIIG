@@ -579,6 +579,7 @@ export async function runExpiryNotificationJob(
     for (const delivery of claimed) {
       counts.deliveriesClaimed += 1;
       const deliveryId = String(delivery.id);
+      affectedEventIds.add(String(delivery.event_id));
 
       const eventContext = await resolveEventContext(client, String(delivery.event_id), eventContextCache);
       if (!eventContext) {
@@ -668,7 +669,6 @@ export async function runExpiryNotificationJob(
           counts.retryScheduled += 1;
         }
       }
-      affectedEventIds.add(String(delivery.event_id));
     }
   }
 

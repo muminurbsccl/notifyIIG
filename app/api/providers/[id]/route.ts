@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { requireApiProfile } from "@/lib/auth";
+import { canAccessProvider, requireApiProfile } from "@/lib/auth";
 import { InputError, jsonError, jsonNotFound } from "@/lib/http";
 import { providerInputSchema } from "@/lib/validation";
 import { writeAudit } from "@/lib/audit";
@@ -15,6 +15,9 @@ export async function GET(_request: Request, context: RouteContext) {
     const { data, error } = await auth.supabase.from("providers").select("*").eq("id", id).maybeSingle();
     if (error) throw error;
     if (!data) return jsonNotFound("Provider not found");
+    // Defense in depth alongside RLS: the app layer should not depend solely
+    // on row-level security to keep providers scoped to their own access.
+    if (!canAccessProvider(auth.profile, String(data.id))) return jsonNotFound("Provider not found");
     return NextResponse.json({ provider: data });
   } catch (cause) {
     return jsonError(cause);
@@ -29,6 +32,9 @@ export async function PATCH(request: Request, context: RouteContext) {
     const beforeResult = await auth.supabase.from("providers").select("*").eq("id", id).maybeSingle();
     if (beforeResult.error) throw beforeResult.error;
     if (!beforeResult.data) return jsonNotFound("Provider not found");
+    // Defense in depth alongside RLS: the app layer should not depend solely
+    // on row-level security to keep providers scoped to their own access.
+    if (!canAccessProvider(auth.profile, String(beforeResult.data.id))) return jsonNotFound("Provider not found");
     const row = {
       ...(input.code === undefined ? {} : { code: input.code }),
       ...(input.name === undefined ? {} : { name: input.name }),
@@ -60,6 +66,9 @@ export async function DELETE(request: Request, context: RouteContext) {
     const beforeResult = await auth.supabase.from("providers").select("*").eq("id", id).maybeSingle();
     if (beforeResult.error) throw beforeResult.error;
     if (!beforeResult.data) return jsonNotFound("Provider not found");
+    // Defense in depth alongside RLS: the app layer should not depend solely
+    // on row-level security to keep providers scoped to their own access.
+    if (!canAccessProvider(auth.profile, String(beforeResult.data.id))) return jsonNotFound("Provider not found");
 
     const { error } = await auth.supabase.from("providers").delete().eq("id", id);
     if (error) {
